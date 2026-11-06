@@ -34,7 +34,7 @@ For Phase 1 you only need **agent_sales** and **sci_approver** connected to n8n.
 2. Run (with your number):
 
 ```sql
-update sci.system_controls set owner_telegram_chat_ids = array['123456789'];
+update sci.system_controls set owner_telegram_chat_ids = array['123456789'] where id;
 ```
 
 Later, if your partner should be able to approve too, add their ID: `array['123456789','987654321']`.
@@ -81,12 +81,12 @@ select * from sci.guard_check('sales');            -- ok = true
 
 | Want to… | Run |
 |---|---|
-| Stop everything immediately | `update sci.system_controls set global_pause = true;` |
-| Resume | `update sci.system_controls set global_pause = false;` |
-| Pause one agent | `update sci.system_controls set paused_agents = array['sales']::sci.agent_name[];` |
+| Stop everything immediately | `update sci.system_controls set global_pause = true where id;` |
+| Resume | `update sci.system_controls set global_pause = false where id;` |
+| Pause one agent | `update sci.system_controls set paused_agents = array['sales']::sci.agent_name[] where id;` |
 | Block someone forever | `insert into sci.suppression_list(email, reason) values ('x@y.com','do_not_contact');` |
 | Block a whole company | `insert into sci.suppression_list(domain, reason) values ('company.com','do_not_contact');` |
-| Change the total monthly AI limit | `update sci.system_controls set monthly_total_cap_usd = 25;` |
+| Change the total monthly AI limit | `update sci.system_controls set monthly_total_cap_usd = 25 where id;` |
 | Change a budget | `update sci.budgets set daily_usd = 5 where agent = 'sales';` |
 | See today's AI spend | `select agent, sum(cost_usd) from sci.llm_usage where created_at > current_date group by 1;` |
 | Update SCI knowledge (keeps old versions) | `select sci.set_knowledge('services', 'new text…');` |

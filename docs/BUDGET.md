@@ -16,7 +16,7 @@
 
 ## To raise a limit (owner only, Supabase SQL editor)
 ```sql
-update sci.system_controls set monthly_total_cap_usd = 40;
+update sci.system_controls set monthly_total_cap_usd = 40 where id;
 update sci.budgets set monthly_usd = 25, daily_usd = 2.50 where agent = 'sales';
 ```
 Then raise the Anthropic console spend limit to match (about $5 above the new cap).
