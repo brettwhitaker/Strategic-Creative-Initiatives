@@ -152,6 +152,21 @@ select t.assert('rollback restores the previous value',
   (select fit_score = 10 from sci.prospects where id='00000000-0000-0000-0000-0000000000d2'));
 select t.assert('every change is in the audit log', (select count(*) > 20 from sci.audit_log));
 
+-- ---- Total monthly AI cap across ALL agents ----
+update sci.system_controls set monthly_total_cap_usd = 3.00;
+select t.assert('total cap blocks a DIFFERENT agent once combined spend hits the limit',
+  (select not ok and reason like 'TOTAL_monthly_cap_reached%' from sci.guard_check('exec_assistant', 0.50)));
+update sci.system_controls set monthly_total_cap_usd = 25.00;
+select t.assert('default total cap is $25/month', (select ok from sci.guard_check('exec_assistant', 0.10)));
+
+-- ---- Knowledge versioning ----
+select sci.set_knowledge('icp', 'v-test');
+select t.assert('editing knowledge keeps exactly one active version and preserves history',
+  (select count(*) = 1 from sci.business_knowledge where key='icp' and is_active)
+  and (select count(*) >= 3 from sci.business_knowledge where key='icp'));
+select t.assert('content writing is the lead offer in active knowledge',
+  (select content like '%LEAD OFFER — Content Writing%' from sci.business_knowledge where key='services' and is_active));
+
 rollback;
 \echo
 \echo ALL SAFETY TESTS PASSED

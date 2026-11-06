@@ -16,7 +16,7 @@ The operating system behind Strategic Creative Initiatives' AI team: the Sales R
 - Daily and monthly AI budgets per agent, checked before every AI call.
 - One switch pauses everything. Every change is logged and can be undone.
 
-Run `scripts/test_local.sh` to prove all of the above (39 automated tests).
+Run `scripts/test_local.sh` to prove all of the above (42 automated tests).
 
 ## Folders
 

@@ -56,7 +56,17 @@ In n8n → **Credentials → Add credential → Postgres**:
 
 Name it **"SCI DB – Sales"**. Repeat with `sci_approver.<project-ref>` and name it **"SCI DB – Approver"**.
 
-## Step 5: Check it worked
+## Step 5: Set a hard spending limit at Anthropic (backup safety net)
+
+The database already stops all agents once **$25 of AI usage** is reached in a month. As a second, independent safety net:
+
+1. Go to **console.anthropic.com → Settings → Limits** (or Billing).
+2. Set a **monthly spend limit of $30**.
+3. Turn **off auto-reload** of credits. Then if anything ever went wrong, the most you could lose is your remaining credit balance.
+
+> Already installed `install.sql` before this update? Run `dist/upgrade_0006_only_if_already_installed.sql` instead of reinstalling.
+
+## Step 6: Check it worked
 
 Run in the SQL editor:
 
@@ -76,8 +86,10 @@ select * from sci.guard_check('sales');            -- ok = true
 | Pause one agent | `update sci.system_controls set paused_agents = array['sales']::sci.agent_name[];` |
 | Block someone forever | `insert into sci.suppression_list(email, reason) values ('x@y.com','do_not_contact');` |
 | Block a whole company | `insert into sci.suppression_list(domain, reason) values ('company.com','do_not_contact');` |
+| Change the total monthly AI limit | `update sci.system_controls set monthly_total_cap_usd = 25;` |
 | Change a budget | `update sci.budgets set daily_usd = 5 where agent = 'sales';` |
 | See today's AI spend | `select agent, sum(cost_usd) from sci.llm_usage where created_at > current_date group by 1;` |
+| Update SCI knowledge (keeps old versions) | `select sci.set_knowledge('services', 'new text…');` |
 | Undo a change | find it in `sci.audit_log`, then `select sci.restore_row(<audit id>);` |
 | Remove test data | `select sci.purge_test_data();` |
 
