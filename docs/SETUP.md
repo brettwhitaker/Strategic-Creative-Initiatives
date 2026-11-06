@@ -64,7 +64,7 @@ The database already stops all agents once **$25 of AI usage** is reached in a m
 2. Set a **monthly spend limit of $30**.
 3. Turn **off auto-reload** of credits. Then if anything ever went wrong, the most you could lose is your remaining credit balance.
 
-> Already installed `install.sql` before this update? Run `dist/upgrade_0006_only_if_already_installed.sql` instead of reinstalling.
+> Already installed `install.sql` before this update? Run `dist/upgrade_if_already_installed.sql` instead of reinstalling.
 
 ## Step 6: Check it worked
 

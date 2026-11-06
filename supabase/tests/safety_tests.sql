@@ -164,8 +164,8 @@ select sci.set_knowledge('icp', 'v-test');
 select t.assert('editing knowledge keeps exactly one active version and preserves history',
   (select count(*) = 1 from sci.business_knowledge where key='icp' and is_active)
   and (select count(*) >= 3 from sci.business_knowledge where key='icp'));
-select t.assert('content writing is the lead offer in active knowledge',
-  (select content like '%LEAD OFFER — Content Writing%' from sci.business_knowledge where key='services' and is_active));
+select t.assert('content writing AND social media are both core offers',
+  (select content like '%CORE OFFER A — Content Writing%' and content like '%CORE OFFER B — Social Media%' from sci.business_knowledge where key='services' and is_active));
 
 rollback;
 \echo
