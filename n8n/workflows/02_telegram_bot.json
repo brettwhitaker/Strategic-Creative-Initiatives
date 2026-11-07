@@ -1,0 +1,285 @@
+{
+  "name": "SCI – Telegram Bot",
+  "nodes": [
+    {
+      "id": "b84f038b-0a2e-5dc3-b023-d53000a024ea",
+      "name": "Telegram message or button",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "updates": [
+          "message",
+          "callback_query"
+        ],
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "SCI – Telegram Bot"
+        }
+      }
+    },
+    {
+      "id": "9d47c7b4-f365-574d-b3a0-17a381b6a239",
+      "name": "Read the command",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Turn a raw Telegram update into a simple command. Everything else is ignored.\nconst u = $json;\nconst cb = u.callback_query;\nconst msg = u.message;\nlet kind = 'ignore', approvalId = null, decision = null;\nif (cb) {\n  const m = /^ap:([0-9a-f-]{36}):(approved|rejected)$/.exec(cb.data || '');\n  if (m) { kind = 'decision'; approvalId = m[1]; decision = m[2]; }\n} else if (msg && typeof msg.text === 'string') {\n  const cmd = msg.text.trim().split(/\\s+/)[0].split('@')[0].toLowerCase();\n  if (['/pause', '/resume', '/status', '/help', '/start'].includes(cmd)) kind = cmd.slice(1);\n}\nif (kind === 'ignore') return [];\nreturn [{ json: {\n  kind, approvalId, decision,\n  fromId: String(cb ? cb.from.id : msg.from.id),\n  chatId: String(cb ? cb.message.chat.id : msg.chat.id),\n  callbackId: cb ? cb.id : null,\n  messageId: cb ? cb.message.message_id : null,\n  originalText: cb ? (cb.message.text || '') : '',\n}}];"
+      }
+    },
+    {
+      "id": "d8a408bf-e977-52e0-949c-aa93fa68bdf4",
+      "name": "Ask the database (checks it's you)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select sci.handle_telegram($1, $2, nullif($3, '')::uuid, nullif($4, '')) as reply",
+        "options": {
+          "queryReplacement": "={{ [ $json.kind, $json.fromId, $json.approvalId || '', $json.decision || '' ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "SCI DB – Approver"
+        }
+      }
+    },
+    {
+      "id": "299c7a4b-f71a-5795-b2ce-80e94bd40d44",
+      "name": "Is it from Brett?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-reply",
+              "leftValue": "={{ $json.reply }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "dbea89f3-0fa2-5cfb-aad4-2b8c60b06f9b",
+      "name": "Was it a button?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        960,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "is-button",
+              "leftValue": "={{ $('Read the command').item.json.kind }}",
+              "rightValue": "decision",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "330fe364-fdfe-5027-85ea-8d5695af758e",
+      "name": "Confirm button press",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1200,
+        -100
+      ],
+      "parameters": {
+        "resource": "callback",
+        "queryId": "={{ $('Read the command').item.json.callbackId }}",
+        "additionalFields": {
+          "text": "={{ $('Ask the database (checks it\\'s you)').item.json.reply.slice(0, 190) }}"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "SCI – Telegram Bot"
+        }
+      }
+    },
+    {
+      "id": "62545ede-e0de-5aed-9ba4-adc5e01bdd49",
+      "name": "Update the approval card",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1440,
+        -100
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "editMessageText",
+        "chatId": "={{ $('Read the command').item.json.chatId }}",
+        "messageId": "={{ $('Read the command').item.json.messageId }}",
+        "updateFields": {},
+        "replyMarkup": "none",
+        "text": "={{ $('Read the command').item.json.originalText + '\\n\\n— ' + $('Ask the database (checks it\\'s you)').item.json.reply }}"
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "SCI – Telegram Bot"
+        }
+      }
+    },
+    {
+      "id": "1e5fa18b-88c2-535a-bb86-4a25766e093d",
+      "name": "Reply to command",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1200,
+        100
+      ],
+      "parameters": {
+        "chatId": "={{ $('Read the command').item.json.chatId }}",
+        "text": "={{ $('Ask the database (checks it\\'s you)').item.json.reply }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "SCI – Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram message or button": {
+      "main": [
+        [
+          {
+            "node": "Read the command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read the command": {
+      "main": [
+        [
+          {
+            "node": "Ask the database (checks it's you)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask the database (checks it's you)": {
+      "main": [
+        [
+          {
+            "node": "Is it from Brett?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is it from Brett?": {
+      "main": [
+        [
+          {
+            "node": "Was it a button?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Was it a button?": {
+      "main": [
+        [
+          {
+            "node": "Confirm button press",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply to command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirm button press": {
+      "main": [
+        [
+          {
+            "node": "Update the approval card",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": true
+  },
+  "active": false,
+  "pinData": {},
+  "tags": []
+}

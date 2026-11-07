@@ -1,0 +1,60 @@
+{
+  "name": "SCI – Error Alerts",
+  "nodes": [
+    {
+      "id": "4f8fa654-9820-5606-9001-7fac938f12fd",
+      "name": "When any workflow fails",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "bbf9afb5-9a18-5e57-aecc-42bac9dc3160",
+      "name": "Alert Brett on Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "chatId": "8995080526",
+        "text": "={{ '⚠️ SCI workflow failed\\n\\nWorkflow: ' + $json.workflow.name + '\\nStep: ' + ($json.execution.lastNodeExecuted || 'unknown') + '\\nError: ' + (($json.execution.error && $json.execution.error.message) || 'unknown').slice(0, 300) + ($json.execution.url ? '\\n\\nDetails: ' + $json.execution.url : '') }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "SCI – Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When any workflow fails": {
+      "main": [
+        [
+          {
+            "node": "Alert Brett on Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": true
+  },
+  "active": false,
+  "pinData": {},
+  "tags": []
+}

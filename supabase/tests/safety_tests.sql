@@ -167,6 +167,26 @@ select t.assert('editing knowledge keeps exactly one active version and preserve
 select t.assert('content writing AND social media are both core offers',
   (select content like '%CORE OFFER A — Content Writing%' and content like '%CORE OFFER B — Social Media%' from sci.business_knowledge where key='services' and is_active));
 
+-- ---- Telegram bot commands (run as the bot's limited login) ----
+select t.assert('bot ignores strangers (no reply at all)', sci.handle_telegram('status','999999') is null);
+select t.expect_ok('bot: /status works for owner', $$select sci.handle_telegram('status','111111')$$, 'sci_approver');
+select t.expect_ok('bot: /pause works for owner', $$select sci.handle_telegram('pause','111111')$$, 'sci_approver');
+select t.assert('…and actually pauses everything', (select global_pause from sci.system_controls));
+select t.expect_ok('bot: /resume works for owner', $$select sci.handle_telegram('resume','111111')$$, 'sci_approver');
+select t.assert('…and actually resumes', (select not global_pause from sci.system_controls));
+select sci.handle_telegram('pause','999999');
+select t.assert('stranger cannot pause via bot', (select not global_pause from sci.system_controls));
+insert into sci.outbound_actions(id, created_by, channel, recipient, body, idempotency_key, status, is_test)
+values ('00000000-0000-0000-0000-00000000e003','sales','email','dana@riverbendplumbing.test','Draft','tg-test','pending_approval', true);
+insert into sci.approvals(id, subject_table, subject_id, summary)
+values ('00000000-0000-0000-0000-00000000f003','outbound_actions','00000000-0000-0000-0000-00000000e003','tg test');
+select t.assert('bot: Reject button rejects the draft',
+  sci.handle_telegram('decision','111111','00000000-0000-0000-0000-00000000f003','rejected') like '❌%');
+select t.assert('…and the draft is marked rejected',
+  (select status = 'rejected' from sci.outbound_actions where id='00000000-0000-0000-0000-00000000e003'));
+select t.assert('bot: pressing a button twice is harmless',
+  sci.handle_telegram('decision','111111','00000000-0000-0000-0000-00000000f003','approved') like 'ℹ️%');
+
 rollback;
 \echo
 \echo ALL SAFETY TESTS PASSED

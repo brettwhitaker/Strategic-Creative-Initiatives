@@ -1,0 +1,115 @@
+{
+  "name": "SCI – Test Approval Card",
+  "nodes": [
+    {
+      "id": "f125e025-fb56-5dd8-8d12-1c6b0bac4b26",
+      "name": "Click 'Execute workflow' to test",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "f5b2a601-93ba-547c-91ad-92cee34a4fc8",
+      "name": "Create a TEST draft",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "with o as (\n  insert into sci.outbound_actions (created_by, channel, prospect_id, recipient, subject, body, idempotency_key, status, is_test)\n  values ('sales', 'email', '00000000-0000-0000-0000-0000000000d1', 'dana@riverbendplumbing.test',\n          'TEST: Quick idea for Riverbend Plumbing',\n          'This is a TEST draft to check that approval buttons work. It can never be sent.',\n          'test-approval:' || gen_random_uuid(), 'pending_approval', true)\n  returning id, recipient, subject, body\n), a as (\n  insert into sci.approvals (subject_table, subject_id, summary)\n  select 'outbound_actions', id, 'TEST email to ' || recipient from o\n  returning id, subject_id\n)\nselect a.id as approval_id, o.recipient, o.subject, o.body from a join o on o.id = a.subject_id",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "SCI DB – Sales"
+        }
+      }
+    },
+    {
+      "id": "52e214f2-d43c-5e9f-b15d-0eb418bdb70e",
+      "name": "Send approval card",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "chatId": "8995080526",
+        "text": "={{ '📝 Approval needed (TEST)\\n\\nTo: ' + $json.recipient + '\\nSubject: ' + $json.subject + '\\n\\n' + $json.body }}",
+        "additionalFields": {
+          "appendAttribution": false
+        },
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "✅ Approve",
+                    "additionalFields": {
+                      "callback_data": "={{ 'ap:' + $json.approval_id + ':approved' }}"
+                    }
+                  },
+                  {
+                    "text": "❌ Reject",
+                    "additionalFields": {
+                      "callback_data": "={{ 'ap:' + $json.approval_id + ':rejected' }}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "SCI – Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Click 'Execute workflow' to test": {
+      "main": [
+        [
+          {
+            "node": "Create a TEST draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a TEST draft": {
+      "main": [
+        [
+          {
+            "node": "Send approval card",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": true
+  },
+  "active": false,
+  "pinData": {},
+  "tags": []
+}
