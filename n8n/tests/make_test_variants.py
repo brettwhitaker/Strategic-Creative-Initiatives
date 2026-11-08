@@ -10,7 +10,7 @@ import json, pathlib, sys, copy
 ROOT = pathlib.Path(__file__).resolve().parents[1] / "workflows"
 out, approval_id = pathlib.Path(sys.argv[1]), sys.argv[2]
 out.mkdir(parents=True, exist_ok=True)
-CRED_IDS = {"SCI DB – Approver": "credAppr", "SCI DB – Sales": "credSales", "SCI – Telegram Bot": "credTg"}
+CRED_IDS = {"SCI DB – Approver": "credAppr", "SCI DB – Sales": "credSales", "SCI – Telegram Bot": "credTg", "SCI – Claude (Sales)": "credClaude"}
 
 def fix_creds(n):
     for v in n.get("credentials", {}).values():
@@ -31,13 +31,44 @@ def telegram_to_set(n):
         "options": {}})
     n.pop("credentials", None)
 
+
+MOCK_CLAUDE = r"""
+const st = $json.state;
+if (!st.request || !st.request.model || !Array.isArray(st.request.tools)) throw new Error('bad request built');
+if (st.iter === 0) return [{ json: { stop_reason: 'pause_turn',
+  usage: { input_tokens: 20000, output_tokens: 500, cache_read_input_tokens: 3000, server_tool_use: { web_search_requests: 2 } },
+  content: [
+    { type: 'server_tool_use', id: 's1', name: 'web_fetch', input: { url: 'https://www.flemingpt.test/' } },
+    { type: 'web_fetch_tool_result', tool_use_id: 's1', content: { type: 'web_fetch_result', url: 'https://www.flemingpt.test/',
+      content: { type: 'document', source: { type: 'text', data: 'Welcome to Fleming PT. Contact info@flemingpt.test' } } } } ] } }];
+if (st.request.messages.length !== 2) throw new Error('pause_turn continuation did not append the assistant turn');
+return [{ json: { stop_reason: 'tool_use',
+  usage: { input_tokens: 25000, output_tokens: 2500, server_tool_use: { web_search_requests: 1 } },
+  content: [ { type: 'text', text: 'Submitting.' }, { type: 'tool_use', id: 't1', name: 'submit_research', input: {
+    business_summary: 'Physical therapy clinic in Fleming Island.', industry: 'Healthcare', size_estimate: 'unknown',
+    findings: [
+      { category: 'website_copy', statement: 'Homepage headline is generic', status: 'verified',
+        source_url: 'https://flemingpt.test', evidence_quote: 'Welcome to Fleming PT' },
+      { category: 'company_facts', statement: 'Has 40 employees', status: 'verified',
+        source_url: 'https://made-up-source.test/about', evidence_quote: '40 employees' },
+      { category: 'social_media', statement: 'Instagram activity', status: 'unknown', source_url: '', evidence_quote: '' } ],
+    score_breakdown: { gap: 30, trust_driven: 8, ability_to_invest: 10, growth: 4, geography: 10, reachability: 4 },
+    top_opportunity: 'Clearer homepage messaging and a patient-education blog.',
+    recommended_service: 'Website copy package', secondary_service: '', disqualify_reason: '',
+    public_contact: { name: '', role: '', email: 'info@flemingpt.test', source_url: 'https://www.flemingpt.test/' },
+    open_questions: [] } } ] } }];
+"""
+
 def variant(fname, wf_id, fake_updates=None):
     wf = json.loads((ROOT / fname).read_text())
     wf["id"] = wf_id
     wf["name"] = "TEST " + wf["name"]
     for n in wf["nodes"]:
         fix_creds(n)
-        if n["type"] == "n8n-nodes-base.telegram":
+        if n["name"] == "Call Claude":
+            n.update(type="n8n-nodes-base.code", typeVersion=2, parameters={"jsCode": MOCK_CLAUDE})
+            n.pop("credentials", None)
+        elif n["type"] == "n8n-nodes-base.telegram":
             telegram_to_set(n)
         elif n["type"] == "n8n-nodes-base.telegramTrigger":
             n.update(type="n8n-nodes-base.code", typeVersion=2, parameters={
@@ -46,6 +77,9 @@ def variant(fname, wf_id, fake_updates=None):
             wf["nodes"].append({"id": "start", "name": "Start", "type": "n8n-nodes-base.manualTrigger",
                                 "typeVersion": 1, "position": [-240, 0], "parameters": {}})
             wf["connections"]["Start"] = {"main": [[{"node": n["name"], "type": "main", "index": 0}]]}
+    if fname.startswith("04"):
+        wf["nodes"] = [n for n in wf["nodes"] if n["type"] != "n8n-nodes-base.scheduleTrigger"]
+        wf["connections"].pop("Hourly 8 AM–7 PM ET", None)
     (out / fname).write_text(json.dumps(wf, indent=2, ensure_ascii=False))
 
 OWNER, STRANGER = 111111, 999999
@@ -62,4 +96,5 @@ updates = [
 variant("03_test_approval_card.json", "testCard")
 variant("02_telegram_bot.json", "testBot", updates)
 variant("01_error_alerts.json", "testErr")
+variant("04_sales_research.json", "testResearch")
 print("ok")

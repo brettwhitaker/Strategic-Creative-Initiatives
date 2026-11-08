@@ -1527,4 +1527,21 @@ grant execute on function sci.sales_start_research(uuid, text), sci.sales_save_r
                           sci.sales_fail_research(uuid, uuid, text, jsonb) to agent_sales;
 -- record_llm_usage/finish_task are already granted; prompts readable by agents (active only).
 
+-- Claim the next task of ONE type (so the research workflow never grabs an outreach task).
+create or replace function sci.claim_next_task_of_type(p_agent sci.agent_name, p_type text, p_worker text default 'n8n')
+returns setof sci.tasks language plpgsql security definer set search_path = sci, public as $$
+declare t sci.tasks;
+begin
+  update sci.tasks set status = 'queued', locked_at = null, locked_by = null
+   where owner_agent = p_agent and type = p_type and status = 'in_progress' and locked_at < now() - interval '30 minutes';
+  select * into t from sci.tasks
+   where owner_agent = p_agent and type = p_type and status = 'queued' and attempts < max_attempts
+   order by priority, created_at for update skip locked limit 1;
+  if t.id is null then return; end if;
+  update sci.tasks set status = 'in_progress', locked_at = now(), locked_by = p_worker, attempts = attempts + 1
+   where id = t.id returning * into t;
+  return next t;
+end $$;
+grant execute on function sci.claim_next_task_of_type(sci.agent_name, text, text) to agent_sales, agent_customer_service, agent_social, agent_exec_assistant;
+
 commit;

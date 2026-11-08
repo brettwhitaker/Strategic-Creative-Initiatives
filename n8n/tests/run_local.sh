@@ -35,4 +35,15 @@ check "draft moved to approved (still can't send: sending OFF)" "select status='
 check "stranger's /pause was ignored"                  "select not global_pause from sci.system_controls"
 grep -q "SCI status" "$WORK/bot.out" && echo "PASS /status reply was produced" || { echo "FAIL /status"; cat "$WORK/bot.out"; exit 1; }
 grep -q "Approved. (Sending is OFF" "$WORK/bot.out" && echo "PASS approval card text gets updated" || { echo "FAIL card update"; cat "$WORK/bot.out"; exit 1; }
+
+echo "== 3. Sales research workflow (Claude replaced by a scripted stand-in: pause, then result)"
+"$N8N" import:workflow --input="$WORK/04_sales_research.json" >/dev/null 2>&1
+"$N8N" execute --id=testResearch --rawOutput > "$WORK/research.out" 2>&1 || { cat "$WORK/research.out"; exit 1; }
+cp "$WORK/research.out" /tmp/ 2>/dev/null || true
+check "first queued prospect was researched and scored (66 -> qualified)" "select fit_score=66 and stage='qualified' from sci.prospects p join sci.tasks t on t.related_id=p.id where t.type='research_prospect' and t.status='done'"
+check "honest finding saved as verified" "select count(*)=1 from sci.research_findings where status='verified' and statement like 'Homepage headline%'"
+check "made-up source was downgraded to inferred" "select count(*)=1 from sci.research_findings where status='inferred' and statement like 'Has 40 employees%(source not confirmed)'"
+check "usage from BOTH Claude calls was costed" "select cost_usd = round((45000*4 + 3000*20 + 3000*0.2)/1e6 + 3*0.01, 4) from sci.llm_usage order by created_at desc limit 1"
+check "run marked succeeded" "select status='succeeded' from sci.agent_runs order by started_at desc limit 1"
+grep -q "couldn't be matched" "$WORK/research.out" && echo "PASS Telegram summary warns about the unconfirmed claim" || { echo "FAIL summary"; exit 1; }
 echo "ALL N8N WORKFLOW TESTS PASSED"

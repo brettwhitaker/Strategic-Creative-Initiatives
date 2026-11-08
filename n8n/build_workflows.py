@@ -160,9 +160,216 @@ test_card = workflow("SCI – Test Approval Card", [
                 ]}}]}}),
 ], link(("Click 'Execute workflow' to test", "Create a TEST draft"), ("Create a TEST draft", "Send approval card")))
 
+# ---------------------------------------------------------------- 4. Sales: research prospects
+SUBMIT_TOOL = {
+    "name": "submit_research",
+    "description": "Submit your complete research result for this prospect. Call exactly once, at the end.",
+    "strict": True,
+    "input_schema": {
+        "type": "object", "additionalProperties": False,
+        "required": ["business_summary", "industry", "size_estimate", "findings", "score_breakdown",
+                     "top_opportunity", "recommended_service", "secondary_service", "disqualify_reason",
+                     "public_contact", "open_questions"],
+        "properties": {
+            "business_summary": {"type": "string", "description": "2-3 sentences: what they do, who they serve, where."},
+            "industry": {"type": "string"},
+            "size_estimate": {"type": "string", "description": "e.g. '10-20 staff (inferred from team page)' or 'unknown'"},
+            "findings": {"type": "array", "items": {
+                "type": "object", "additionalProperties": False,
+                "required": ["category", "statement", "status", "source_url", "evidence_quote"],
+                "properties": {
+                    "category": {"type": "string", "enum": ["website_copy", "blog_content", "email_newsletter", "social_media",
+                                                            "reviews", "thought_leadership", "company_facts", "growth_signal",
+                                                            "poor_fit_signal", "other"]},
+                    "statement": {"type": "string"},
+                    "status": {"type": "string", "enum": ["verified", "inferred", "unknown"]},
+                    "source_url": {"type": "string", "description": "URL retrieved in this session; empty string if none"},
+                    "evidence_quote": {"type": "string", "description": "Exact short quote from that page; empty unless verified"}}}},
+            "score_breakdown": {"type": "object", "additionalProperties": False,
+                "required": ["gap", "trust_driven", "ability_to_invest", "growth", "geography", "reachability"],
+                "properties": {"gap": {"type": "integer", "description": "0-40"},
+                               "trust_driven": {"type": "integer", "description": "0-10"},
+                               "ability_to_invest": {"type": "integer", "description": "0-20"},
+                               "growth": {"type": "integer", "description": "0-15"},
+                               "geography": {"type": "integer", "description": "0-10"},
+                               "reachability": {"type": "integer", "description": "0-5"}}},
+            "top_opportunity": {"type": "string", "description": "The single most compelling way SCI could help, in one sentence."},
+            "recommended_service": {"type": "string", "description": "ONE service from SCI's list"},
+            "secondary_service": {"type": "string", "description": "Optional second service; empty string if none"},
+            "disqualify_reason": {"type": "string", "description": "Empty unless a poor-fit rule clearly applies"},
+            "public_contact": {"type": "object", "additionalProperties": False,
+                "required": ["name", "role", "email", "source_url"],
+                "description": "Public business contact seen on a retrieved page; all empty strings if none",
+                "properties": {"name": {"type": "string"}, "role": {"type": "string"},
+                               "email": {"type": "string"}, "source_url": {"type": "string"}}},
+            "open_questions": {"type": "array", "items": {"type": "string"},
+                               "description": "Things you could not determine that Brett may want to check"}}}}
+
+BUILD_REQUEST_JS = r"""
+// Build the Claude request from what the database returned.
+const ctx = $json.ctx;
+const k = ctx.knowledge || {};
+const knowledge = ['positioning', 'icp', 'services', 'fit_rubric', 'evidence_policy']
+  .map(key => '## ' + key.toUpperCase() + '\n' + String(k[key] || '').trim()).join('\n\n');
+const request = {
+  model: ctx.model,
+  max_tokens: 16000,
+  thinking: { type: 'adaptive' },
+  output_config: { effort: ctx.effort },
+  fallbacks: 'default',
+  system: [
+    { type: 'text', text: String(ctx.system_text).trim() },
+    { type: 'text', text: 'SCI BUSINESS KNOWLEDGE\n\n' + knowledge, cache_control: { type: 'ephemeral' } },
+  ],
+  tools: [
+    { type: 'web_search_20260209', name: 'web_search', max_uses: 4 },
+    { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 5, max_content_tokens: 10000 },
+    SUBMIT_TOOL_JSON,
+  ],
+  tool_choice: { type: 'auto' },
+  messages: [{ role: 'user', content:
+    'Research this prospect and finish by calling submit_research.\n\n<prospect>\n' +
+    JSON.stringify(ctx.prospect, null, 2) + '\n</prospect>' }],
+};
+return [{ json: { state: {
+  ctx: { run_id: ctx.run_id, task_id: ctx.task_id, business: ctx.prospect.business_name },
+  request, iter: 0, retrieved: [],
+  usage: { model: ctx.model, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, web_searches: 0 },
+} } }];
+""".strip().replace("SUBMIT_TOOL_JSON", json.dumps(SUBMIT_TOOL))
+
+AFTER_CALL_JS = r"""
+// Add up usage, remember which URLs were actually retrieved, and continue if Claude paused.
+const st = JSON.parse(JSON.stringify($('Prepare Claude call').last().json.state));
+const res = $json;
+const u = res.usage || {};
+st.usage.input_tokens += u.input_tokens || 0;
+st.usage.output_tokens += u.output_tokens || 0;
+st.usage.cache_read_tokens += u.cache_read_input_tokens || 0;
+st.usage.cache_write_tokens += u.cache_creation_input_tokens || 0;
+st.usage.web_searches += (u.server_tool_use && u.server_tool_use.web_search_requests) || 0;
+const walk = (v, inResult) => {
+  if (v == null) return;
+  if (typeof v === 'string') { if (inResult) for (const m of v.matchAll(/https?:\/\/[^\s"'<>)\]]+/g)) st.retrieved.push(m[0]); return; }
+  if (Array.isArray(v)) { v.forEach(x => walk(x, inResult)); return; }
+  if (typeof v === 'object') {
+    const isRes = inResult || (typeof v.type === 'string' && v.type.endsWith('_tool_result'));
+    for (const val of Object.values(v)) walk(val, isRes);
+  }
+};
+walk(res.content, false);
+st.iter += 1;
+st.stop_reason = res.stop_reason;
+if (res.stop_reason === 'pause_turn' && st.iter < 5) {
+  st.request.messages.push({ role: 'assistant', content: res.content });
+  return [{ json: { state: st, again: true } }];
+}
+st.final_content = res.content || [];
+delete st.request;
+return [{ json: { state: st, again: false } }];
+""".strip()
+
+VALIDATE_JS = r"""
+// Anti-fabrication check: a 'verified' finding must point to a page Claude actually retrieved.
+const st = $json.state;
+// Normalize a URL to host+path (no scheme, www, query, fragment or trailing slash). No URL() in n8n's sandbox.
+const norm = s => {
+  const m = /^https?:\/\/(?:www\.)?([^\/?#\s]+)([^?#\s]*)/i.exec(String(s || '').trim());
+  return m ? (m[1] + m[2].replace(/\/+$/, '')).toLowerCase() : null;
+};
+const seen = new Set(st.retrieved.map(norm).filter(Boolean));
+const call = st.final_content.find(b => b.type === 'tool_use' && b.name === 'submit_research');
+if (!call) {
+  return [{ json: { ok: false, ctx: st.ctx, usage: st.usage,
+    error: 'Claude finished without submitting research (stop reason: ' + st.stop_reason + ')' } }];
+}
+const r = typeof call.input === 'string' ? JSON.parse(call.input) : call.input;
+let downgraded = 0;
+r.findings = (r.findings || []).filter(f => f && f.statement).map(f => {
+  if (!['verified', 'inferred', 'unknown'].includes(f.status)) f.status = 'unknown';
+  if (f.status === 'verified' && !(f.source_url && f.evidence_quote && seen.has(norm(f.source_url)))) {
+    downgraded++;
+    return { ...f, status: 'inferred', evidence_quote: '', statement: f.statement + ' (source not confirmed)' };
+  }
+  return f;
+});
+if (r.public_contact && r.public_contact.source_url && !seen.has(norm(r.public_contact.source_url))) {
+  r.public_contact = { name: '', role: '', email: '', source_url: '' };
+}
+return [{ json: { ok: true, result: r, downgraded, ctx: st.ctx, usage: st.usage } }];
+""".strip()
+
+def if_node(name, left, op, right, pos, typ="boolean"):
+    cond = {"id": name, "leftValue": left, "rightValue": right, "operator": {"type": typ, "operation": op}}
+    if op in ("true", "false", "notEmpty", "empty"): cond["operator"]["singleValue"] = True
+    return node(name, "n8n-nodes-base.if", 2.2, {
+        "conditions": {"options": {"caseSensitive": True, "leftValue": "", "typeValidation": "loose", "version": 2},
+                       "conditions": [cond], "combinator": "and"}, "options": {}}, pos)
+
+CLAUDE_CALL = node("Call Claude", "n8n-nodes-base.httpRequest", 4.2, {
+    "method": "POST", "url": "https://api.anthropic.com/v1/messages",
+    "authentication": "predefinedCredentialType", "nodeCredentialType": "anthropicApi",
+    "sendHeaders": True, "headerParameters": {"parameters": [
+        {"name": "anthropic-version", "value": "2023-06-01"},
+        {"name": "anthropic-beta", "value": "server-side-fallback-2026-07-01"}]},
+    "sendBody": True, "specifyBody": "json", "jsonBody": "={{ JSON.stringify($json.state.request) }}",
+    "options": {"timeout": 300000}},
+    [1680, 0], {"anthropicApi": {"id": "", "name": "SCI – Claude (Sales)"}},
+    retryOnFail=True, maxTries=2, waitBetweenTries=5000)
+
+V = "$('Check the research').item.json"
+research = workflow("SCI – Sales: Research Prospects", [
+    node("Run now (manual)", "n8n-nodes-base.manualTrigger", 1, {}, [0, -100]),
+    node("Hourly 8 AM–7 PM ET", "n8n-nodes-base.scheduleTrigger", 1.2,
+         {"rule": {"interval": [{"field": "cronExpression", "expression": "20 8-19 * * *"}]}}, [0, 100]),
+    pg("Safety check (pause + budget)", "select ok, reason from sci.guard_check('sales', 0.60)", None, [240, 0], "sales"),
+    if_node("OK to run?", "={{ $json.ok }}", "true", "", [480, 0]),
+    pg("Take next research task",
+       "select id from sci.claim_next_task_of_type('sales', 'research_prospect', 'n8n')", None, [720, 0], "sales"),
+    pg("Load prospect + instructions",
+       "select sci.sales_start_research($1::uuid, $2) as ctx",
+       "={{ [ $json.id, String($execution.id) ] }}", [960, 0], "sales"),
+    node("Build Claude request", "n8n-nodes-base.code", 2, {"jsCode": BUILD_REQUEST_JS}, [1200, 0]),
+    node("Prepare Claude call", "n8n-nodes-base.code", 2, {"jsCode": "return $input.all();"}, [1440, 0]),
+    CLAUDE_CALL,
+    node("Collect results", "n8n-nodes-base.code", 2, {"jsCode": AFTER_CALL_JS}, [1920, 0]),
+    if_node("Claude paused? Continue", "={{ $json.again }}", "true", "", [2160, 0]),
+    node("Check the research", "n8n-nodes-base.code", 2, {"jsCode": VALIDATE_JS}, [2400, 100]),
+    if_node("Got a result?", "={{ $json.ok }}", "true", "", [2640, 100]),
+    pg("Save + score", "select sci.sales_save_research($1::uuid, $2::uuid, $3::jsonb, $4::jsonb) as saved",
+       "={{ [ $json.ctx.run_id, $json.ctx.task_id, JSON.stringify($json.result), JSON.stringify($json.usage) ] }}",
+       [2880, 0], "sales"),
+    tg_send("Send summary to Brett", OWNER_CHAT_ID,
+            "={{ $json.saved.summary + (" + V + ".downgraded ? '\\n⚠️ ' + " + V + ".downgraded + \" claim(s) couldn't be matched to a page and were marked 'inferred'.\" : '') }}",
+            [3120, 0]),
+    pg("Record failure", "select sci.sales_fail_research($1::uuid, $2::uuid, $3, $4::jsonb)",
+       "={{ [ $json.ctx.run_id, $json.ctx.task_id, $json.error, JSON.stringify($json.usage) ] }}", [2880, 200], "sales"),
+    tg_send("Tell Brett it failed", OWNER_CHAT_ID,
+            "={{ '⚠️ Research failed for ' + " + V + ".ctx.business + '\\n' + " + V + ".error + '\\nIt will be retried automatically (up to 3 tries).' }}",
+            [3120, 200]),
+], link(("Run now (manual)", "Safety check (pause + budget)"),
+        ("Hourly 8 AM–7 PM ET", "Safety check (pause + budget)"),
+        ("Safety check (pause + budget)", "OK to run?"),
+        ("OK to run?", "Take next research task"),
+        ("Take next research task", "Load prospect + instructions"),
+        ("Load prospect + instructions", "Build Claude request"),
+        ("Build Claude request", "Prepare Claude call"),
+        ("Prepare Claude call", "Call Claude"),
+        ("Call Claude", "Collect results"),
+        ("Collect results", "Claude paused? Continue"),
+        ("Claude paused? Continue", "Prepare Claude call", 0),
+        ("Claude paused? Continue", "Check the research", 1),
+        ("Check the research", "Got a result?"),
+        ("Got a result?", "Save + score", 0),
+        ("Got a result?", "Record failure", 1),
+        ("Save + score", "Send summary to Brett"),
+        ("Record failure", "Tell Brett it failed")))
+research["settings"]["timezone"] = "America/New_York"
+
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
     for fname, wf in [("01_error_alerts.json", error_alerts), ("02_telegram_bot.json", telegram_bot),
-                      ("03_test_approval_card.json", test_card)]:
+                      ("03_test_approval_card.json", test_card),
+                      ("04_sales_research.json", research)]:
         (OUT / fname).write_text(json.dumps(wf, indent=2, ensure_ascii=False))
         print("wrote", OUT / fname)
