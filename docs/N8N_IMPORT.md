@@ -25,3 +25,11 @@ Expected: "Success. No rows returned".
 - Send `/pause`, then `/status` (shows PAUSED), then `/resume`.
 
 Nothing here can send email: sending is OFF and test drafts can never be sent.
+
+## D. Sales research (Task 4)
+1. Supabase: run `dist/update_0010_sales_research.sql`, then `dist/first_real_prospects.sql`.
+2. n8n: import `04_sales_research.json`. On **Call Claude**, the credential must be **SCI – Claude (Sales)**.
+   Settings → Error workflow = **SCI – Error Alerts**.
+3. Click **Execute workflow** once to research ONE prospect (~$0.20–0.50). A summary arrives in Telegram.
+4. When you're happy with the quality, **Publish** it: it then runs hourly 8 AM–7 PM ET, one prospect per run,
+   and stops automatically at the daily ($1.50) and monthly budgets.

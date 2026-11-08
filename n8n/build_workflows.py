@@ -228,7 +228,10 @@ const request = {
   ],
   tool_choice: { type: 'auto' },
   messages: [{ role: 'user', content:
-    'Research this prospect and finish by calling submit_research.\n\n<prospect>\n' +
+    'Research this prospect and finish by calling submit_research.' +
+    (ctx.prospect.website ? '' : ' Its website is not on file: first find the OFFICIAL website with a search ' +
+      '(not a directory listing), and only research it if you are confident it is the same business.') +
+    '\n\n<prospect>\n' +
     JSON.stringify(ctx.prospect, null, 2) + '\n</prospect>' }],
 };
 return [{ json: { state: {
