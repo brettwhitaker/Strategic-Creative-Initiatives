@@ -279,6 +279,50 @@ select t.assert('discovery v2 instructions are active (hiring first)',
   (select version = 2 and system_text like '%hiring (strongest%' from sci.prompts where name = 'prospect_discovery' and is_active));
 select t.assert('geography scoring credits Indianapolis', (select content like '%Indianapolis area = 7%' from sci.business_knowledge where key = 'fit_rubric' and is_active));
 
+-- ---- Outreach drafts ----
+select t.assert('draft is skipped (not written) when the contact opted out',
+  (sci.sales_start_outreach((select id from sci.tasks where dedupe_key = 'draft_outreach:00000000-0000-0000-0000-0000000000d3'))->>'skip')::boolean);
+select t.assert('…and that prospect is marked do-not-contact', (select stage = 'do_not_contact' from sci.prospects where id = '00000000-0000-0000-0000-0000000000d3'));
+
+update sci.prospects set stage = 'qualified', fit_score = 72, recommended_service = 'Content retainer' where id = '00000000-0000-0000-0000-0000000000d1';
+update sci.outbound_actions set status = 'cancelled' where prospect_id = '00000000-0000-0000-0000-0000000000d1' and status in ('draft','pending_approval','approved');
+insert into sci.research_findings(prospect_id, category, statement, status, source_url, evidence_quote, retrieved_at)
+values ('00000000-0000-0000-0000-0000000000d1','blog_content','Blog last post 2021','verified','https://riverbendplumbing.test/blog','March 2021', now()),
+       ('00000000-0000-0000-0000-0000000000d1','other','Probably 10 staff','inferred',null,null,null);
+insert into sci.tasks(type, owner_agent, related_table, related_id, dedupe_key)
+values ('draft_outreach','sales','prospects','00000000-0000-0000-0000-0000000000d1','draft_outreach:00000000-0000-0000-0000-0000000000d1');
+set local role agent_sales;
+update t_ctx set ctx = sci.sales_start_outreach((select id from sci.tasks where dedupe_key = 'draft_outreach:00000000-0000-0000-0000-0000000000d1'), 'exec-o');
+reset role;
+select t.assert('draft context includes ONLY verified findings',
+  (select jsonb_array_length(ctx->'verified_findings') >= 1
+      and not exists (select 1 from jsonb_array_elements(ctx->'verified_findings') f where f->>'statement' like 'Probably%') from t_ctx));
+select t.assert('draft context knows the region (Jacksonville = northeast_florida) and outreach rules',
+  (select ctx->'prospect'->>'region' = 'northeast_florida' and ctx->'knowledge'->>'outreach_rules' like '%IUPUI%' from t_ctx));
+set local role agent_sales;
+update t_ctx set ctx = ctx || jsonb_build_object('saved', sci.sales_save_outreach((ctx->>'run_id')::uuid, (ctx->>'task_id')::uuid,
+  '{"subject":"An idea for your blog","body":"Hi Dana,\n\nYour reviews show how much customers trust Riverbend. Your blog has been quiet since 2021, and a regular post or two each month could turn that trust into steady search traffic. I write content for local service businesses. Would you be open to a quick 15-minute call next week?","angle":"content","finding_ids_used":[],"note_for_brett":"Blog gap is the clearest opportunity."}'::jsonb,
+  '{"input_tokens":6000,"output_tokens":800}'::jsonb));
+reset role;
+select t.assert('draft lands in the outbox awaiting approval, with the legal footer added by the system',
+  (select status = 'pending_approval' and recipient = 'dana@riverbendplumbing.test' and body like '%Founder, Strategic Creative Initiatives LLC%reply and let me know.%'
+     from sci.outbound_actions where idempotency_key = 'outreach:00000000-0000-0000-0000-0000000000d1:step1:email'));
+select t.assert('approval card warns while the mailing address is missing',
+  (select ctx->'saved'->>'card' like '%Mailing address not set yet%' and ctx->'saved'->>'card' like '%Sending is OFF%' from t_ctx));
+select t.assert('prospect moves to drafted; task done',
+  (select stage = 'drafted' from sci.prospects where id = '00000000-0000-0000-0000-0000000000d1')
+  and (select status = 'done' from sci.tasks where dedupe_key = 'draft_outreach:00000000-0000-0000-0000-0000000000d1'));
+select t.assert('the bot can approve the draft card', sci.handle_telegram('decision','111111',(select (ctx->'saved'->>'approval_id')::uuid from t_ctx),'approved') like '✅%');
+update sci.sender_profile set mailing_address = '123 Test St, Testville FL 00000' where id;
+select t.assert('footer uses the mailing address once set', sci.email_footer() like '%123 Test St, Testville FL 00000%');
+select t.expect_error('Sales cannot change the sender profile/address', $$update sci.sender_profile set email = 'x@evil.test'$$, 'agent_sales');
+
+-- Indianapolis candidates are stored in Indiana and get the hometown angle
+insert into sci.prospect_candidates(segment_id, name, signal_type, signal, signal_status)
+values ((select id from sci.discovery_segments where region = 'indianapolis' limit 1), 'Circle City Dental', 'hiring', 'Hiring a social media coordinator', 'inferred');
+select sci.decide_candidate((select id from sci.prospect_candidates where name = 'Circle City Dental'), 'research');
+select t.assert('Indianapolis candidate is saved with state IN', (select state = 'IN' from sci.organizations where name = 'Circle City Dental'));
+
 rollback;
 \echo
 \echo ALL SAFETY TESTS PASSED

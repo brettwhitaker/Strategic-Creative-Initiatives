@@ -1,3 +1,4 @@
 .env
 *.local
 scratch*
+dist/local_*.sql

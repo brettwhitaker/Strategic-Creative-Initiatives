@@ -509,11 +509,128 @@ discovery = workflow("SCI – Sales: Weekly Prospect Discovery", [
         ("Record failure", "Tell Brett it failed")))
 discovery["settings"]["timezone"] = "America/New_York"
 
+# ---------------------------------------------------------------- 6. Sales: outreach drafts
+DRAFT_TOOL = {
+    "name": "submit_draft",
+    "description": "Submit the email draft. Call exactly once.",
+    "strict": True,
+    "input_schema": {"type": "object", "additionalProperties": False,
+        "required": ["subject", "body", "angle", "finding_ids_used", "note_for_brett"],
+        "properties": {
+            "subject": {"type": "string", "description": "Honest subject line, under 8 words"},
+            "body": {"type": "string", "description": "Email body from greeting to the ask. NO signature, address or opt-out line."},
+            "angle": {"type": "string", "enum": ["content", "social", "hiring", "hometown", "proof_point", "other"]},
+            "finding_ids_used": {"type": "array", "items": {"type": "string"}},
+            "note_for_brett": {"type": "string", "description": "One sentence: why this angle; anything to double-check"}}}}
+
+BUILD_DRAFT_JS = r"""
+const ctx = $json.ctx;
+const k = ctx.knowledge || {};
+const knowledge = ['positioning', 'services', 'outreach_rules']
+  .map(key => '## ' + key.toUpperCase() + '\n' + String(k[key] || '').trim()).join('\n\n');
+const request = {
+  model: ctx.model, max_tokens: 8000,
+  thinking: { type: 'adaptive' }, output_config: { effort: ctx.effort }, fallbacks: 'default',
+  system: [
+    { type: 'text', text: String(ctx.system_text).trim() },
+    { type: 'text', text: 'SCI BUSINESS KNOWLEDGE\n\n' + knowledge, cache_control: { type: 'ephemeral' } },
+  ],
+  tools: [DRAFT_TOOL_JSON],
+  tool_choice: { type: 'auto' },
+  messages: [{ role: 'user', content:
+    'Write the first-touch email for this prospect and finish by calling submit_draft.\n\n' +
+    '<prospect>\n' + JSON.stringify(ctx.prospect, null, 2) + '\n</prospect>\n\n' +
+    '<verified_findings>\n' + JSON.stringify(ctx.verified_findings, null, 2) + '\n</verified_findings>\n\n' +
+    '<discovery_signal>\n' + JSON.stringify(ctx.discovery_signal) + '\n</discovery_signal>' }],
+};
+return [{ json: { state: {
+  ctx: { run_id: ctx.run_id, task_id: ctx.task_id, business: ctx.prospect.business_name,
+         finding_ids: (ctx.verified_findings || []).map(f => f.id) },
+  request, iter: 0, retrieved: [],
+  usage: { model: ctx.model, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, web_searches: 0 },
+} } }];
+""".strip().replace("DRAFT_TOOL_JSON", json.dumps(DRAFT_TOOL))
+
+CHECK_DRAFT_JS = r"""
+// Basic quality gates. Anything doubtful is flagged on the card for Brett (he approves every draft).
+const st = $json.state;
+const call = st.final_content.find(b => b.type === 'tool_use' && b.name === 'submit_draft');
+if (!call) return [{ json: { ok: false, ctx: st.ctx, usage: st.usage,
+  error: 'Claude finished without a draft (stop reason: ' + st.stop_reason + ')' } }];
+const d = typeof call.input === 'string' ? JSON.parse(call.input) : call.input;
+const flags = [];
+const known = new Set(st.ctx.finding_ids || []);
+const unknownIds = (d.finding_ids_used || []).filter(id => !known.has(id));
+if (unknownIds.length) flags.push('cited ' + unknownIds.length + ' finding id(s) that were not provided');
+const words = String(d.body || '').trim().split(/\s+/).length;
+if (words > 170) flags.push('long (' + words + ' words)');
+if (/unsubscribe|opt.?out|\bP\.?O\.? Box\b/i.test(d.body || '')) flags.push('body contains its own footer text');
+if (!String(d.subject || '').trim() || String(d.body || '').trim().length < 40) {
+  return [{ json: { ok: false, ctx: st.ctx, usage: st.usage, error: 'Draft was empty or too short' } }];
+}
+if (flags.length) d.note_for_brett = (d.note_for_brett || '') + ' ⚠️ Check: ' + flags.join('; ') + '.';
+return [{ json: { ok: true, draft: d, ctx: st.ctx, usage: st.usage } }];
+""".strip()
+
+drafts = workflow("SCI – Sales: Outreach Drafts", [
+    node("Run now (manual)", "n8n-nodes-base.manualTrigger", 1, {}, [0, -100]),
+    node("Hourly 8 AM–7 PM ET", "n8n-nodes-base.scheduleTrigger", 1.2,
+         {"rule": {"interval": [{"field": "cronExpression", "expression": "50 8-19 * * *"}]}}, [0, 100]),
+    pg("Safety check (pause + budget)", "select ok, reason from sci.guard_check('sales', 0.20)", None, [240, 0], "sales"),
+    if_node("OK to run?", "={{ $json.ok }}", "true", "", [480, 0]),
+    pg("Take next draft task", "select id from sci.claim_next_task_of_type('sales', 'draft_outreach', 'n8n')", None, [720, 0], "sales"),
+    pg("Load prospect + findings", "select sci.sales_start_outreach($1::uuid, $2) as ctx",
+       "={{ [ $json.id, String($execution.id) ] }}", [960, 0], "sales"),
+    if_node("Opted out? Skip", "={{ $json.ctx.skip === true }}", "true", "", [1200, 0]),
+    tg_send("Tell Brett it was skipped", OWNER_CHAT_ID, "={{ '⏭ ' + $json.ctx.reason }}", [1440, -150]),
+    node("Build Claude request", "n8n-nodes-base.code", 2, {"jsCode": BUILD_DRAFT_JS}, [1440, 50]),
+    node("Prepare Claude call", "n8n-nodes-base.code", 2, {"jsCode": "return $input.all();"}, [1680, 50]),
+    {**CLAUDE_CALL, "position": [1920, 50]},
+    node("Collect results", "n8n-nodes-base.code", 2, {"jsCode": AFTER_CALL_JS}, [2160, 50]),
+    if_node("Claude paused? Continue", "={{ $json.again }}", "true", "", [2400, 50]),
+    node("Check the draft", "n8n-nodes-base.code", 2, {"jsCode": CHECK_DRAFT_JS}, [2640, 150]),
+    if_node("Got a draft?", "={{ $json.ok }}", "true", "", [2880, 150]),
+    pg("Save draft + approval", "select sci.sales_save_outreach($1::uuid, $2::uuid, $3::jsonb, $4::jsonb) as saved",
+       "={{ [ $json.ctx.run_id, $json.ctx.task_id, JSON.stringify($json.draft), JSON.stringify($json.usage) ] }}",
+       [3120, 50], "sales"),
+    tg_send("Send approval card", OWNER_CHAT_ID, "={{ $json.saved.card }}", [3360, 50], reply_markup={
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {"rows": [{"row": {"buttons": [
+            {"text": "✅ Approve", "additionalFields": {"callback_data": "={{ 'ap:' + $json.saved.approval_id + ':approved' }}"}},
+            {"text": "❌ Reject", "additionalFields": {"callback_data": "={{ 'ap:' + $json.saved.approval_id + ':rejected' }}"}},
+        ]}}]}}),
+    pg("Record failure", "select sci.sales_fail_research($1::uuid, $2::uuid, $3, $4::jsonb)",
+       "={{ [ $json.ctx.run_id, $json.ctx.task_id, $json.error, JSON.stringify($json.usage) ] }}", [3120, 250], "sales"),
+    tg_send("Tell Brett it failed", OWNER_CHAT_ID,
+            "={{ '⚠️ Outreach draft failed for ' + $('Check the draft').item.json.ctx.business + '\\n' + $('Check the draft').item.json.error + '\\nIt will be retried automatically (up to 3 tries).' }}",
+            [3360, 250]),
+], link(("Run now (manual)", "Safety check (pause + budget)"),
+        ("Hourly 8 AM–7 PM ET", "Safety check (pause + budget)"),
+        ("Safety check (pause + budget)", "OK to run?"),
+        ("OK to run?", "Take next draft task"),
+        ("Take next draft task", "Load prospect + findings"),
+        ("Load prospect + findings", "Opted out? Skip"),
+        ("Opted out? Skip", "Tell Brett it was skipped", 0),
+        ("Opted out? Skip", "Build Claude request", 1),
+        ("Build Claude request", "Prepare Claude call"),
+        ("Prepare Claude call", "Call Claude"),
+        ("Call Claude", "Collect results"),
+        ("Collect results", "Claude paused? Continue"),
+        ("Claude paused? Continue", "Prepare Claude call", 0),
+        ("Claude paused? Continue", "Check the draft", 1),
+        ("Check the draft", "Got a draft?"),
+        ("Got a draft?", "Save draft + approval", 0),
+        ("Got a draft?", "Record failure", 1),
+        ("Save draft + approval", "Send approval card"),
+        ("Record failure", "Tell Brett it failed")))
+drafts["settings"]["timezone"] = "America/New_York"
+
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
     for fname, wf in [("01_error_alerts.json", error_alerts), ("02_telegram_bot.json", telegram_bot),
                       ("03_test_approval_card.json", test_card),
                       ("04_sales_research.json", research),
-                      ("05_weekly_discovery.json", discovery)]:
+                      ("05_weekly_discovery.json", discovery),
+                      ("06_outreach_drafts.json", drafts)]:
         (OUT / fname).write_text(json.dumps(wf, indent=2, ensure_ascii=False))
         print("wrote", OUT / fname)

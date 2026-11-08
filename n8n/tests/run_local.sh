@@ -74,4 +74,16 @@ PY
 "$N8N" import:workflow --input="$WORK/02_telegram_bot_2.json" >/dev/null 2>&1
 "$N8N" execute --id=testBot2 --rawOutput > "$WORK/bot2.out" 2>&1 || { cat "$WORK/bot2.out"; exit 1; }
 check "Research button queued the candidate for research" "select exists(select 1 from sci.tasks t join sci.prospects p on p.id=t.related_id join sci.organizations o on o.id=p.organization_id where o.name='Ancient City Accounting' and t.status='queued')"
+
+echo "== 6. Outreach drafts workflow"
+"$N8N" import:workflow --input="$WORK/06_outreach_drafts.json" >/dev/null 2>&1
+"$N8N" execute --id=testDrafts --rawOutput > "$WORK/drafts.out" 2>&1 || { cat "$WORK/drafts.out"; exit 1; }
+cp "$WORK/drafts.out" /tmp/ 2>/dev/null || true
+check "draft saved to outbox awaiting approval, footer added" "select count(*)=1 from sci.outbound_actions where idempotency_key like 'outreach:%:step1:email' and status='pending_approval' and body like '%reply and let me know.%'"
+check "qualified prospect moved to drafted" "select count(*)=1 from sci.prospects where stage='drafted'"
+AP=$("${PSQL[@]}" -c "select a.id from sci.approvals a join sci.outbound_actions o on o.id=a.subject_id where o.idempotency_key like 'outreach:%'")
+grep -q "ap:$AP:approved" "$WORK/drafts.out" && echo "PASS approval card carries Approve button for this draft" || { echo "FAIL draft card"; exit 1; }
+grep -q "not provided" "$WORK/drafts.out" && echo "PASS card flags a cited finding that wasn't provided" || { echo "FAIL flag"; exit 1; }
+"$N8N" execute --id=testDrafts --rawOutput > "$WORK/drafts2.out" 2>&1 || true
+check "running again with nothing queued creates no duplicate" "select count(*)=1 from sci.outbound_actions where idempotency_key like 'outreach:%:step1:email'"
 echo "ALL N8N WORKFLOW TESTS PASSED"

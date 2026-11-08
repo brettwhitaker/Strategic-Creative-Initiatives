@@ -50,3 +50,10 @@ Nothing here can send email: sending is OFF and test drafts can never be sent.
 | Weekly Discovery | **SCI DB – Sales** | Call Claude: SCI – Claude (Sales); Telegram: SCI – Telegram Bot |
 
 Each: ⋯ → Settings → Error workflow = **SCI – Error Alerts**, then Publish.
+
+## F. Outreach drafts (Task 5)
+1. Supabase: run `dist/update_0013_outreach_drafts.sql`, then your private `dist/local_sender_details.sql`
+   (signature + mailing address; not stored in GitHub).
+2. n8n: import `06_outreach_drafts.json`. Database steps → **SCI DB – Sales**; Call Claude → **SCI – Claude (Sales)**.
+   Error workflow → SCI – Error Alerts. Publish. It drafts one email per hour (8 AM–7 PM ET) for qualified prospects.
+3. Each draft arrives in Telegram with ✅ Approve / ❌ Reject. Approving marks it ready; sending stays OFF.

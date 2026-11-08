@@ -34,4 +34,4 @@ Run `scripts/test_local.sh` to prove all of the above (53 database tests + end-t
 - [x] **Task 2**: n8n guard step, error alerts, cost logging
 - [x] **Task 3**: Telegram bot: approvals, /pause, /status
 - [x] **Task 4**: Sales: prospect research + qualification
-- [ ] **Task 5**: Sales: outreach drafts → approval card (draft only)
+- [x] **Task 5**: Sales: outreach drafts → approval card (draft only)

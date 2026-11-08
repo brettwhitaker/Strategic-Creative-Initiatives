@@ -1,0 +1,679 @@
+{
+  "name": "SCI – Sales: Outreach Drafts",
+  "nodes": [
+    {
+      "id": "2710f622-b7ad-5c58-bdb3-025bcc1be062",
+      "name": "Run now (manual)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -100
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "8a9b5140-96e8-50f5-88e7-2c43782680db",
+      "name": "Hourly 8 AM–7 PM ET",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        100
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "50 8-19 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "b30c62a1-0737-5aa9-b099-efb9658afbe8",
+      "name": "Safety check (pause + budget)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select ok, reason from sci.guard_check('sales', 0.20)",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "SCI DB – Sales"
+        }
+      }
+    },
+    {
+      "id": "a590b2fe-1942-5d96-bb2d-5aa0b05453c8",
+      "name": "OK to run?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "OK to run?",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "8d09debc-793a-596f-a484-1aa45d27a196",
+      "name": "Take next draft task",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select id from sci.claim_next_task_of_type('sales', 'draft_outreach', 'n8n')",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "SCI DB – Sales"
+        }
+      }
+    },
+    {
+      "id": "d7cf3d72-cfb5-5f6f-a235-fbd2cb7a57ef",
+      "name": "Load prospect + findings",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        960,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select sci.sales_start_outreach($1::uuid, $2) as ctx",
+        "options": {
+          "queryReplacement": "={{ [ $json.id, String($execution.id) ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "SCI DB – Sales"
+        }
+      }
+    },
+    {
+      "id": "202ec30c-c458-5908-a536-4b1c91f0d99e",
+      "name": "Opted out? Skip",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1200,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "Opted out? Skip",
+              "leftValue": "={{ $json.ctx.skip === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "017e1e86-cbdf-5a8d-8d14-d498cde563b0",
+      "name": "Tell Brett it was skipped",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1440,
+        -150
+      ],
+      "parameters": {
+        "chatId": "8995080526",
+        "text": "={{ '⏭ ' + $json.ctx.reason }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "SCI – Telegram Bot"
+        }
+      }
+    },
+    {
+      "id": "c40e7655-5a9e-5157-8ac9-f43f1b20de94",
+      "name": "Build Claude request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        50
+      ],
+      "parameters": {
+        "jsCode": "const ctx = $json.ctx;\nconst k = ctx.knowledge || {};\nconst knowledge = ['positioning', 'services', 'outreach_rules']\n  .map(key => '## ' + key.toUpperCase() + '\\n' + String(k[key] || '').trim()).join('\\n\\n');\nconst request = {\n  model: ctx.model, max_tokens: 8000,\n  thinking: { type: 'adaptive' }, output_config: { effort: ctx.effort }, fallbacks: 'default',\n  system: [\n    { type: 'text', text: String(ctx.system_text).trim() },\n    { type: 'text', text: 'SCI BUSINESS KNOWLEDGE\\n\\n' + knowledge, cache_control: { type: 'ephemeral' } },\n  ],\n  tools: [{\"name\": \"submit_draft\", \"description\": \"Submit the email draft. Call exactly once.\", \"strict\": true, \"input_schema\": {\"type\": \"object\", \"additionalProperties\": false, \"required\": [\"subject\", \"body\", \"angle\", \"finding_ids_used\", \"note_for_brett\"], \"properties\": {\"subject\": {\"type\": \"string\", \"description\": \"Honest subject line, under 8 words\"}, \"body\": {\"type\": \"string\", \"description\": \"Email body from greeting to the ask. NO signature, address or opt-out line.\"}, \"angle\": {\"type\": \"string\", \"enum\": [\"content\", \"social\", \"hiring\", \"hometown\", \"proof_point\", \"other\"]}, \"finding_ids_used\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}}, \"note_for_brett\": {\"type\": \"string\", \"description\": \"One sentence: why this angle; anything to double-check\"}}}}],\n  tool_choice: { type: 'auto' },\n  messages: [{ role: 'user', content:\n    'Write the first-touch email for this prospect and finish by calling submit_draft.\\n\\n' +\n    '<prospect>\\n' + JSON.stringify(ctx.prospect, null, 2) + '\\n</prospect>\\n\\n' +\n    '<verified_findings>\\n' + JSON.stringify(ctx.verified_findings, null, 2) + '\\n</verified_findings>\\n\\n' +\n    '<discovery_signal>\\n' + JSON.stringify(ctx.discovery_signal) + '\\n</discovery_signal>' }],\n};\nreturn [{ json: { state: {\n  ctx: { run_id: ctx.run_id, task_id: ctx.task_id, business: ctx.prospect.business_name,\n         finding_ids: (ctx.verified_findings || []).map(f => f.id) },\n  request, iter: 0, retrieved: [],\n  usage: { model: ctx.model, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, web_searches: 0 },\n} } }];"
+      }
+    },
+    {
+      "id": "b8941e29-0956-5e82-9d3e-1ab0ebd2a952",
+      "name": "Prepare Claude call",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        50
+      ],
+      "parameters": {
+        "jsCode": "return $input.all();"
+      }
+    },
+    {
+      "id": "b81e8c7f-3765-5561-a57e-de52bb6412dc",
+      "name": "Call Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1920,
+        50
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "anthropic-beta",
+              "value": "server-side-fallback-2026-07-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.state.request) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "credentials": {
+        "anthropicApi": {
+          "id": "",
+          "name": "SCI – Claude (Sales)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "b4238d5e-d692-5efc-b0b2-323969cb7025",
+      "name": "Collect results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2160,
+        50
+      ],
+      "parameters": {
+        "jsCode": "// Add up usage, remember which URLs were actually retrieved, and continue if Claude paused.\nconst st = JSON.parse(JSON.stringify($('Prepare Claude call').last().json.state));\nconst res = $json;\nconst u = res.usage || {};\nst.usage.input_tokens += u.input_tokens || 0;\nst.usage.output_tokens += u.output_tokens || 0;\nst.usage.cache_read_tokens += u.cache_read_input_tokens || 0;\nst.usage.cache_write_tokens += u.cache_creation_input_tokens || 0;\nst.usage.web_searches += (u.server_tool_use && u.server_tool_use.web_search_requests) || 0;\nconst walk = (v, inResult) => {\n  if (v == null) return;\n  if (typeof v === 'string') { if (inResult) for (const m of v.matchAll(/https?:\\/\\/[^\\s\"'<>)\\]]+/g)) st.retrieved.push(m[0]); return; }\n  if (Array.isArray(v)) { v.forEach(x => walk(x, inResult)); return; }\n  if (typeof v === 'object') {\n    const isRes = inResult || (typeof v.type === 'string' && v.type.endsWith('_tool_result'));\n    for (const val of Object.values(v)) walk(val, isRes);\n  }\n};\nwalk(res.content, false);\nst.iter += 1;\nst.stop_reason = res.stop_reason;\nif (res.stop_reason === 'pause_turn' && st.iter < 5) {\n  st.request.messages.push({ role: 'assistant', content: res.content });\n  return [{ json: { state: st, again: true } }];\n}\nst.final_content = res.content || [];\ndelete st.request;\nreturn [{ json: { state: st, again: false } }];"
+      }
+    },
+    {
+      "id": "bbf210f3-d962-5740-8917-57d6a7b35f3f",
+      "name": "Claude paused? Continue",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2400,
+        50
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "Claude paused? Continue",
+              "leftValue": "={{ $json.again }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "4391e20f-bb8a-5a5e-8ab0-6ae6cebfb27d",
+      "name": "Check the draft",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        150
+      ],
+      "parameters": {
+        "jsCode": "// Basic quality gates. Anything doubtful is flagged on the card for Brett (he approves every draft).\nconst st = $json.state;\nconst call = st.final_content.find(b => b.type === 'tool_use' && b.name === 'submit_draft');\nif (!call) return [{ json: { ok: false, ctx: st.ctx, usage: st.usage,\n  error: 'Claude finished without a draft (stop reason: ' + st.stop_reason + ')' } }];\nconst d = typeof call.input === 'string' ? JSON.parse(call.input) : call.input;\nconst flags = [];\nconst known = new Set(st.ctx.finding_ids || []);\nconst unknownIds = (d.finding_ids_used || []).filter(id => !known.has(id));\nif (unknownIds.length) flags.push('cited ' + unknownIds.length + ' finding id(s) that were not provided');\nconst words = String(d.body || '').trim().split(/\\s+/).length;\nif (words > 170) flags.push('long (' + words + ' words)');\nif (/unsubscribe|opt.?out|\\bP\\.?O\\.? Box\\b/i.test(d.body || '')) flags.push('body contains its own footer text');\nif (!String(d.subject || '').trim() || String(d.body || '').trim().length < 40) {\n  return [{ json: { ok: false, ctx: st.ctx, usage: st.usage, error: 'Draft was empty or too short' } }];\n}\nif (flags.length) d.note_for_brett = (d.note_for_brett || '') + ' ⚠️ Check: ' + flags.join('; ') + '.';\nreturn [{ json: { ok: true, draft: d, ctx: st.ctx, usage: st.usage } }];"
+      }
+    },
+    {
+      "id": "9c82bd29-c96f-58f4-86ed-b0b53d67e3c8",
+      "name": "Got a draft?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2880,
+        150
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "Got a draft?",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "9694a40e-e1e6-5140-93a6-0976100c9aa7",
+      "name": "Save draft + approval",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3120,
+        50
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select sci.sales_save_outreach($1::uuid, $2::uuid, $3::jsonb, $4::jsonb) as saved",
+        "options": {
+          "queryReplacement": "={{ [ $json.ctx.run_id, $json.ctx.task_id, JSON.stringify($json.draft), JSON.stringify($json.usage) ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "SCI DB – Sales"
+        }
+      }
+    },
+    {
+      "id": "52e214f2-d43c-5e9f-b15d-0eb418bdb70e",
+      "name": "Send approval card",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3360,
+        50
+      ],
+      "parameters": {
+        "chatId": "8995080526",
+        "text": "={{ $json.saved.card }}",
+        "additionalFields": {
+          "appendAttribution": false
+        },
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "✅ Approve",
+                    "additionalFields": {
+                      "callback_data": "={{ 'ap:' + $json.saved.approval_id + ':approved' }}"
+                    }
+                  },
+                  {
+                    "text": "❌ Reject",
+                    "additionalFields": {
+                      "callback_data": "={{ 'ap:' + $json.saved.approval_id + ':rejected' }}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "SCI – Telegram Bot"
+        }
+      }
+    },
+    {
+      "id": "39275fce-062a-59a8-9eb5-913054710739",
+      "name": "Record failure",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3120,
+        250
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select sci.sales_fail_research($1::uuid, $2::uuid, $3, $4::jsonb)",
+        "options": {
+          "queryReplacement": "={{ [ $json.ctx.run_id, $json.ctx.task_id, $json.error, JSON.stringify($json.usage) ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "SCI DB – Sales"
+        }
+      }
+    },
+    {
+      "id": "b866262d-9de1-5346-87f7-d2dcb7f27be5",
+      "name": "Tell Brett it failed",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3360,
+        250
+      ],
+      "parameters": {
+        "chatId": "8995080526",
+        "text": "={{ '⚠️ Outreach draft failed for ' + $('Check the draft').item.json.ctx.business + '\\n' + $('Check the draft').item.json.error + '\\nIt will be retried automatically (up to 3 tries).' }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "SCI – Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Run now (manual)": {
+      "main": [
+        [
+          {
+            "node": "Safety check (pause + budget)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hourly 8 AM–7 PM ET": {
+      "main": [
+        [
+          {
+            "node": "Safety check (pause + budget)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Safety check (pause + budget)": {
+      "main": [
+        [
+          {
+            "node": "OK to run?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OK to run?": {
+      "main": [
+        [
+          {
+            "node": "Take next draft task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Take next draft task": {
+      "main": [
+        [
+          {
+            "node": "Load prospect + findings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load prospect + findings": {
+      "main": [
+        [
+          {
+            "node": "Opted out? Skip",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Opted out? Skip": {
+      "main": [
+        [
+          {
+            "node": "Tell Brett it was skipped",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Claude request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude request": {
+      "main": [
+        [
+          {
+            "node": "Prepare Claude call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Claude call": {
+      "main": [
+        [
+          {
+            "node": "Call Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude": {
+      "main": [
+        [
+          {
+            "node": "Collect results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect results": {
+      "main": [
+        [
+          {
+            "node": "Claude paused? Continue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude paused? Continue": {
+      "main": [
+        [
+          {
+            "node": "Prepare Claude call",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check the draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check the draft": {
+      "main": [
+        [
+          {
+            "node": "Got a draft?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Got a draft?": {
+      "main": [
+        [
+          {
+            "node": "Save draft + approval",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save draft + approval": {
+      "main": [
+        [
+          {
+            "node": "Send approval card",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record failure": {
+      "main": [
+        [
+          {
+            "node": "Tell Brett it failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": true,
+    "timezone": "America/New_York"
+  },
+  "active": false,
+  "pinData": {},
+  "tags": []
+}

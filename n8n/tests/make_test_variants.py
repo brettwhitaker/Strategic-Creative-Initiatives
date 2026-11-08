@@ -35,6 +35,15 @@ def telegram_to_set(n):
 MOCK_CLAUDE = r"""
 const st = $json.state;
 if (!st.request || !st.request.model || !Array.isArray(st.request.tools)) throw new Error('bad request built');
+if (st.request.tools.some(t => t.name === 'submit_draft')) {
+  const um = st.request.messages[0].content;
+  if (!um.includes('<verified_findings>')) throw new Error('findings missing');
+  return [{ json: { stop_reason: 'tool_use', usage: { input_tokens: 7000, output_tokens: 900 },
+    content: [{ type: 'tool_use', id: 't3', name: 'submit_draft', input: {
+      subject: 'A quick idea for your homepage',
+      body: 'Hi there,\n\nYour homepage welcomes visitors warmly, and a clearer headline about what makes your care different could turn more of them into patients. I write website copy for local healthcare practices. Would you be open to a quick 15-minute call next week?',
+      angle: 'content', finding_ids_used: ['not-a-real-id'], note_for_brett: 'Homepage message is the clearest gap.' } }] } }];
+}
 if (st.request.tools.some(t => t.name === 'submit_candidates')) {
   if (!st.request.messages[0].content.includes('Category:')) throw new Error('segment missing from request');
   return [{ json: { stop_reason: 'tool_use', usage: { input_tokens: 30000, output_tokens: 2000, server_tool_use: { web_search_requests: 5 } },
@@ -93,6 +102,9 @@ def variant(fname, wf_id, fake_updates=None):
     if fname.startswith("04"):
         wf["nodes"] = [n for n in wf["nodes"] if n["type"] != "n8n-nodes-base.scheduleTrigger"]
         wf["connections"].pop("Hourly 8 AM–7 PM ET", None)
+    if fname.startswith("06"):
+        wf["nodes"] = [n for n in wf["nodes"] if n["type"] != "n8n-nodes-base.scheduleTrigger"]
+        wf["connections"].pop("Hourly 8 AM–7 PM ET", None)
     if fname.startswith("05"):
         wf["nodes"] = [n for n in wf["nodes"] if n["type"] != "n8n-nodes-base.scheduleTrigger"]
         wf["connections"].pop("Mondays 9:40 AM ET", None)
@@ -116,4 +128,5 @@ variant("02_telegram_bot.json", "testBot", updates)
 variant("01_error_alerts.json", "testErr")
 variant("04_sales_research.json", "testResearch")
 variant("05_weekly_discovery.json", "testDiscovery")
+variant("06_outreach_drafts.json", "testDrafts")
 print("ok")
