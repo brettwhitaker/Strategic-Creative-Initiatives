@@ -123,7 +123,7 @@ def variant(fname, wf_id, fake_updates=None):
         wf["connections"].pop("Hourly 8 AM–7 PM ET", None)
     if fname.startswith("05"):
         wf["nodes"] = [n for n in wf["nodes"] if n["type"] != "n8n-nodes-base.scheduleTrigger"]
-        wf["connections"].pop("Mondays 9:40 AM ET", None)
+        wf["connections"].pop("Mon & Wed 9:40 AM ET", None)
     (out / fname).write_text(json.dumps(wf, indent=2, ensure_ascii=False))
 
 OWNER, STRANGER = 111111, 999999

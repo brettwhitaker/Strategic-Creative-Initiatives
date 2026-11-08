@@ -13,8 +13,8 @@
       "parameters": {}
     },
     {
-      "id": "972c4ccd-57e5-52e5-b439-885591083bd1",
-      "name": "Mondays 9:40 AM ET",
+      "id": "eec5bda6-ede4-5e44-a734-c78dfb49f3e8",
+      "name": "Mon & Wed 9:40 AM ET",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [
@@ -26,7 +26,7 @@
           "interval": [
             {
               "field": "cronExpression",
-              "expression": "40 9 * * 1"
+              "expression": "40 9 * * 1,3"
             }
           ]
         }
@@ -472,7 +472,7 @@
         ]
       ]
     },
-    "Mondays 9:40 AM ET": {
+    "Mon & Wed 9:40 AM ET": {
       "main": [
         [
           {
