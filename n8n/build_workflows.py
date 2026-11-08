@@ -76,6 +76,8 @@ $input.all().forEach((item, i) => {
     if (m) { kind = 'candidate'; target = m[1]; decision = m[2]; }
     m = /^rd:([0-9a-f-]{36})$/.exec(cb.data || '');
     if (m) { kind = 'redraft'; target = m[1]; }
+    m = /^hw:([0-9a-f-]{36}):(replied|skip)$/.exec(cb.data || '');
+    if (m) { kind = 'helpwanted'; target = m[1]; decision = m[2]; }
   } else if (msg && typeof msg.text === 'string') {
     const text = msg.text.trim();
     const cmd = text.split(/\s+/)[0].split('@')[0].toLowerCase();
@@ -635,12 +637,138 @@ drafts = workflow("SCI – Sales: Outreach Drafts", [
         ("Record failure", "Tell Brett it failed")))
 drafts["settings"]["timezone"] = "America/New_York"
 
+# ---------------------------------------------------------------- 7. Sales: weekly Help Wanted scan (read-only)
+POSTS_TOOL = {
+    "name": "submit_posts",
+    "description": "Submit the help-wanted posts you found. Call exactly once, at the end.",
+    "strict": True,
+    "input_schema": {"type": "object", "additionalProperties": False, "required": ["posts"],
+        "properties": {"posts": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False,
+            "required": ["url", "platform", "community", "title", "posted", "location", "need_type", "summary", "quote", "fit_note", "suggested_reply"],
+            "properties": {
+                "url": {"type": "string", "description": "Exact URL of the post you retrieved"},
+                "platform": {"type": "string", "enum": ["reddit", "craigslist", "other"]},
+                "community": {"type": "string", "description": "e.g. r/jacksonville or 'Jacksonville Craigslist gigs'"},
+                "title": {"type": "string"},
+                "posted": {"type": "string", "description": "As shown on the post, or 'unknown'"},
+                "location": {"type": "string"},
+                "need_type": {"type": "string", "enum": ["website", "social_media", "content", "marketing", "other"]},
+                "summary": {"type": "string"},
+                "quote": {"type": "string", "description": "Short exact quote from the post"},
+                "fit_note": {"type": "string"},
+                "suggested_reply": {"type": "string", "description": "60-110 words, helpful first, for Brett to post himself"}}}}}}}
+
+BUILD_HW_JS = r"""
+const ctx = $json.ctx;
+const k = ctx.knowledge || {};
+const knowledge = ['positioning', 'services'].map(key => '## ' + key.toUpperCase() + '\n' + String(k[key] || '').trim()).join('\n\n');
+const request = {
+  model: ctx.model, max_tokens: 16000,
+  thinking: { type: 'adaptive' }, output_config: { effort: ctx.effort }, fallbacks: 'default',
+  system: [
+    { type: 'text', text: String(ctx.system_text).trim() },
+    { type: 'text', text: 'SCI BUSINESS KNOWLEDGE\n\n' + knowledge, cache_control: { type: 'ephemeral' } },
+  ],
+  tools: [
+    { type: 'web_search_20260209', name: 'web_search', max_uses: 6, allowed_domains: ['reddit.com', 'craigslist.org'] },
+    { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 6, max_content_tokens: 6000, allowed_domains: ['reddit.com', 'craigslist.org'] },
+    POSTS_TOOL_JSON,
+  ],
+  tool_choice: { type: 'auto' },
+  messages: [{ role: 'user', content:
+    'Today is ' + ctx.today + '. Find recent help-wanted posts and finish by calling submit_posts.\n\n' +
+    '<already_found>\n' + (ctx.known_urls || []).join('\n') + '\n</already_found>' }],
+};
+return [{ json: { state: {
+  ctx: { run_id: ctx.run_id }, request, iter: 0, retrieved: [],
+  usage: { model: ctx.model, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, web_searches: 0 },
+} } }];
+""".strip().replace("POSTS_TOOL_JSON", json.dumps(POSTS_TOOL))
+
+CHECK_POSTS_JS = r"""
+// Keep only posts whose URL Claude actually retrieved in this run (no invented posts).
+const st = $json.state;
+const norm = s => {
+  const m = /^https?:\/\/(?:www\.|old\.)?([^\/?#\s]+)([^?#\s]*)/i.exec(String(s || '').trim());
+  return m ? (m[1] + m[2].replace(/\/+$/, '')).toLowerCase() : null;
+};
+const seen = new Set(st.retrieved.map(norm).filter(Boolean));
+const call = st.final_content.find(b => b.type === 'tool_use' && b.name === 'submit_posts');
+if (!call) return [{ json: { ok: false, ctx: st.ctx, usage: st.usage,
+  error: 'Help Wanted scan finished without submitting posts (stop reason: ' + st.stop_reason + ')' } }];
+const r = typeof call.input === 'string' ? JSON.parse(call.input) : call.input;
+const all = r.posts || [];
+r.posts = all.filter(p => seen.has(norm(p.url))).slice(0, 6);
+return [{ json: { ok: true, result: r, dropped: all.length - r.posts.length, ctx: st.ctx, usage: st.usage } }];
+""".strip()
+
+HW_MESSAGES_JS = r"""
+const rows = $input.all().map(i => i.json).filter(r => r.post_id);
+const dropped = $('Check the posts').first().json.dropped || 0;
+const tail = dropped ? ' (' + dropped + ' unconfirmed post(s) were dropped.)' : '';
+if (!rows.length) return [{ json: { kind: 'header', text: '🙋 Weekly Help Wanted scan: no new posts this week.' + tail } }];
+return [{ json: { kind: 'header', text: rows[0].header + tail } },
+        ...rows.map(r => ({ json: { kind: 'card', text: r.card, post_id: r.post_id } }))];
+""".strip()
+
+helpwanted = workflow("SCI – Sales: Weekly Help Wanted Scan", [
+    node("Run now (manual)", "n8n-nodes-base.manualTrigger", 1, {}, [0, -100]),
+    node("Thursdays 9:40 AM ET", "n8n-nodes-base.scheduleTrigger", 1.2,
+         {"rule": {"interval": [{"field": "cronExpression", "expression": "40 9 * * 4"}]}}, [0, 100]),
+    pg("Safety check (pause + budget)", "select ok, reason from sci.guard_check('sales', 0.60)", None, [240, 0], "sales"),
+    if_node("OK to run?", "={{ $json.ok }}", "true", "", [480, 0]),
+    pg("Start scan", "select sci.sales_start_helpwanted($1) as ctx", "={{ [ String($execution.id) ] }}", [720, 0], "sales"),
+    node("Build Claude request", "n8n-nodes-base.code", 2, {"jsCode": BUILD_HW_JS}, [960, 0]),
+    node("Prepare Claude call", "n8n-nodes-base.code", 2, {"jsCode": "return $input.all();"}, [1200, 0]),
+    {**CLAUDE_CALL, "position": [1440, 0]},
+    node("Collect results", "n8n-nodes-base.code", 2, {"jsCode": AFTER_CALL_JS}, [1680, 0]),
+    if_node("Claude paused? Continue", "={{ $json.again }}", "true", "", [1920, 0]),
+    node("Check the posts", "n8n-nodes-base.code", 2, {"jsCode": CHECK_POSTS_JS}, [2160, 100]),
+    if_node("Got a result?", "={{ $json.ok }}", "true", "", [2400, 100]),
+    {**pg("Save new posts", "select * from sci.sales_save_helpwanted($1::uuid, $2::jsonb, $3::jsonb)",
+          "={{ [ $json.ctx.run_id, JSON.stringify($json.result), JSON.stringify($json.usage) ] }}", [2640, 0], "sales"),
+     "alwaysOutputData": True},
+    node("Prepare messages", "n8n-nodes-base.code", 2, {"jsCode": HW_MESSAGES_JS}, [2880, 0]),
+    if_node("Post card?", "={{ $json.kind }}", "equals", "card", [3120, 0], typ="string"),
+    tg_send("Send summary", OWNER_CHAT_ID, "={{ $json.text }}", [3360, -100], extra_fields={"disable_web_page_preview": True}),
+    tg_send("Send post card", OWNER_CHAT_ID, "={{ $json.text }}", [3360, 100], extra_fields={"disable_web_page_preview": True}, reply_markup={
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {"rows": [{"row": {"buttons": [
+            {"text": "👍 I replied", "additionalFields": {"callback_data": "={{ 'hw:' + $json.post_id + ':replied' }}"}},
+            {"text": "⏭ Skip", "additionalFields": {"callback_data": "={{ 'hw:' + $json.post_id + ':skip' }}"}},
+        ]}}]}}),
+    pg("Record failure", "update sci.agent_runs set status = 'failed', error = left($2, 2000), finished_at = now() where id = $1::uuid",
+       "={{ [ $json.ctx.run_id, $json.error ] }}", [2640, 200], "sales"),
+    tg_send("Tell Brett it failed", OWNER_CHAT_ID, "={{ '⚠️ Help Wanted scan failed: ' + $('Check the posts').item.json.error }}", [2880, 200]),
+], link(("Run now (manual)", "Safety check (pause + budget)"),
+        ("Thursdays 9:40 AM ET", "Safety check (pause + budget)"),
+        ("Safety check (pause + budget)", "OK to run?"),
+        ("OK to run?", "Start scan"),
+        ("Start scan", "Build Claude request"),
+        ("Build Claude request", "Prepare Claude call"),
+        ("Prepare Claude call", "Call Claude"),
+        ("Call Claude", "Collect results"),
+        ("Collect results", "Claude paused? Continue"),
+        ("Claude paused? Continue", "Prepare Claude call", 0),
+        ("Claude paused? Continue", "Check the posts", 1),
+        ("Check the posts", "Got a result?"),
+        ("Got a result?", "Save new posts", 0),
+        ("Got a result?", "Record failure", 1),
+        ("Save new posts", "Prepare messages"),
+        ("Prepare messages", "Post card?"),
+        ("Post card?", "Send post card", 0),
+        ("Post card?", "Send summary", 1),
+        ("Record failure", "Tell Brett it failed")))
+helpwanted["settings"]["timezone"] = "America/New_York"
+
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
     for fname, wf in [("01_error_alerts.json", error_alerts), ("02_telegram_bot.json", telegram_bot),
                       ("03_test_approval_card.json", test_card),
                       ("04_sales_research.json", research),
                       ("05_weekly_discovery.json", discovery),
-                      ("06_outreach_drafts.json", drafts)]:
+                      ("06_outreach_drafts.json", drafts),
+                      ("07_help_wanted_scan.json", helpwanted)]:
         (OUT / fname).write_text(json.dumps(wf, indent=2, ensure_ascii=False))
         print("wrote", OUT / fname)

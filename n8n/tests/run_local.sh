@@ -88,4 +88,13 @@ grep -q "not provided" "$WORK/drafts.out" && echo "PASS card flags a cited findi
 "$N8N" execute --id=testDrafts --rawOutput > "$WORK/drafts2.out" 2>&1 || true
 grep -q "rd:$AP" "$WORK/drafts.out" && echo "PASS card carries the Redraft button" || { echo "FAIL redraft button"; exit 1; }
 check "running again with nothing queued creates no duplicate" "select count(*)=1 from sci.outbound_actions where idempotency_key like 'outreach:%:step1:email'"
+
+echo "== 7. Help Wanted scan workflow"
+"$N8N" import:workflow --input="$WORK/07_help_wanted_scan.json" >/dev/null 2>&1
+"$N8N" execute --id=testHW --rawOutput > "$WORK/hw.out" 2>&1 || { cat "$WORK/hw.out"; exit 1; }
+cp "$WORK/hw.out" /tmp/ 2>/dev/null || true
+check "real post saved; invented post dropped" "select count(*)=1 and bool_and(title like 'Need a website%') from sci.help_wanted_posts"
+HW=$("${PSQL[@]}" -c "select id from sci.help_wanted_posts limit 1")
+grep -q "hw:$HW:replied" "$WORK/hw.out" && echo "PASS card carries 'I replied' button" || { echo "FAIL hw buttons"; exit 1; }
+grep -q "1 unconfirmed post(s) were dropped" "$WORK/hw.out" && echo "PASS summary mentions the dropped post" || { echo "FAIL hw summary"; exit 1; }
 echo "ALL N8N WORKFLOW TESTS PASSED"

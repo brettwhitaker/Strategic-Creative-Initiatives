@@ -36,6 +36,18 @@ def telegram_to_set(n):
 MOCK_CLAUDE = r"""
 const st = $json.state;
 if (!st.request || !st.request.model || !Array.isArray(st.request.tools)) throw new Error('bad request built');
+if (st.request.tools.some(t => t.name === 'submit_posts')) {
+  if (!st.request.tools[0].allowed_domains.includes('reddit.com')) throw new Error('search not limited to reddit/craigslist');
+  return [{ json: { stop_reason: 'tool_use', usage: { input_tokens: 20000, output_tokens: 2500, server_tool_use: { web_search_requests: 4 } },
+    content: [
+      { type: 'web_search_tool_result', tool_use_id: 'w9', content: [{ type: 'web_search_result', url: 'https://www.reddit.com/r/jacksonville/comments/zz1/website_help/', title: 'x' }] },
+      { type: 'tool_use', id: 't9', name: 'submit_posts', input: { posts: [
+        { url: 'https://old.reddit.com/r/jacksonville/comments/zz1/website_help/', platform: 'reddit', community: 'r/jacksonville', title: 'Need a website for my food truck',
+          posted: '2 days ago', location: 'Jacksonville', need_type: 'website', summary: 'Food truck owner needs a simple site.', quote: 'Looking for someone local to build a simple website',
+          fit_note: 'Landing page.', suggested_reply: 'Congrats on the truck! A one-page site with your menu, schedule and a phone number covers 90% of what customers need...' },
+        { url: 'https://www.reddit.com/r/smallbusiness/comments/made/up/', platform: 'reddit', community: 'r/smallbusiness', title: 'Invented post',
+          posted: 'unknown', location: '', need_type: 'marketing', summary: 'x', quote: 'x', fit_note: 'x', suggested_reply: 'x' } ] } } ] } }];
+}
 if (st.request.tools.some(t => t.name === 'submit_draft')) {
   const um = st.request.messages[0].content;
   if (!um.includes('<verified_findings>')) throw new Error('findings missing');
@@ -103,6 +115,9 @@ def variant(fname, wf_id, fake_updates=None):
     if fname.startswith("04"):
         wf["nodes"] = [n for n in wf["nodes"] if n["type"] != "n8n-nodes-base.scheduleTrigger"]
         wf["connections"].pop("Hourly 8 AM–7 PM ET", None)
+    if fname.startswith("07"):
+        wf["nodes"] = [n for n in wf["nodes"] if n["type"] != "n8n-nodes-base.scheduleTrigger"]
+        wf["connections"].pop("Thursdays 9:40 AM ET", None)
     if fname.startswith("06"):
         wf["nodes"] = [n for n in wf["nodes"] if n["type"] != "n8n-nodes-base.scheduleTrigger"]
         wf["connections"].pop("Hourly 8 AM–7 PM ET", None)
@@ -132,4 +147,5 @@ variant("01_error_alerts.json", "testErr")
 variant("04_sales_research.json", "testResearch")
 variant("05_weekly_discovery.json", "testDiscovery")
 variant("06_outreach_drafts.json", "testDrafts")
+variant("07_help_wanted_scan.json", "testHW")
 print("ok")

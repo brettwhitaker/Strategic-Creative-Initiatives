@@ -57,3 +57,10 @@ Each: ⋯ → Settings → Error workflow = **SCI – Error Alerts**, then Publi
 2. n8n: import `06_outreach_drafts.json`. Database steps → **SCI DB – Sales**; Call Claude → **SCI – Claude (Sales)**.
    Error workflow → SCI – Error Alerts. Publish. It drafts one email per hour (8 AM–7 PM ET) for qualified prospects.
 3. Each draft arrives in Telegram with ✅ Approve / ❌ Reject. Approving marks it ready; sending stays OFF.
+
+## G. Weekly Help Wanted scan (read-only)
+1. Supabase: run `dist/update_0017_help_wanted.sql`.
+2. Replace the Telegram bot again (archive old, import new `02_telegram_bot.json`, database step → SCI DB – Approver).
+3. Import `07_help_wanted_scan.json`: database steps → SCI DB – Sales; Call Claude → SCI – Claude (Sales).
+   Error workflow → SCI – Error Alerts. Publish. Runs Thursdays 9:40 AM ET.
+The scan never posts anything. You reply yourself from your own account, then tap 👍 I replied.
