@@ -62,27 +62,31 @@ error_alerts = workflow("SCI – Error Alerts", [
 
 # ---------------------------------------------------------------- 2. Telegram bot
 PARSE_JS = r"""
-// Turn a raw Telegram update into a simple command. Everything else is ignored.
-const u = $json;
-const cb = u.callback_query;
-const msg = u.message;
-let kind = 'ignore', approvalId = null, decision = null;
-if (cb) {
-  const m = /^ap:([0-9a-f-]{36}):(approved|rejected)$/.exec(cb.data || '');
-  if (m) { kind = 'decision'; approvalId = m[1]; decision = m[2]; }
-} else if (msg && typeof msg.text === 'string') {
-  const cmd = msg.text.trim().split(/\s+/)[0].split('@')[0].toLowerCase();
-  if (['/pause', '/resume', '/status', '/help', '/start'].includes(cmd)) kind = cmd.slice(1);
-}
-if (kind === 'ignore') return [];
-return [{ json: {
-  kind, approvalId, decision,
-  fromId: String(cb ? cb.from.id : msg.from.id),
-  chatId: String(cb ? cb.message.chat.id : msg.chat.id),
-  callbackId: cb ? cb.id : null,
-  messageId: cb ? cb.message.message_id : null,
-  originalText: cb ? (cb.message.text || '') : '',
-}}];
+// Turn raw Telegram updates into simple commands. Anything else is dropped.
+const out = [];
+$input.all().forEach((item, i) => {
+  const u = item.json;
+  const cb = u.callback_query;
+  const msg = u.message;
+  let kind = 'ignore', approvalId = null, decision = null;
+  if (cb) {
+    const m = /^ap:([0-9a-f-]{36}):(approved|rejected)$/.exec(cb.data || '');
+    if (m) { kind = 'decision'; approvalId = m[1]; decision = m[2]; }
+  } else if (msg && typeof msg.text === 'string') {
+    const cmd = msg.text.trim().split(/\s+/)[0].split('@')[0].toLowerCase();
+    if (['/pause', '/resume', '/status', '/help', '/start'].includes(cmd)) kind = cmd.slice(1);
+  }
+  if (kind === 'ignore') return;
+  out.push({ json: {
+    kind, approvalId, decision,
+    fromId: String(cb ? cb.from.id : msg.from.id),
+    chatId: String(cb ? cb.message.chat.id : msg.chat.id),
+    callbackId: cb ? cb.id : null,
+    messageId: cb ? cb.message.message_id : null,
+    originalText: cb ? (cb.message.text || '') : '',
+  }, pairedItem: { item: i } });
+});
+return out;
 """.strip()
 
 P = "$('Read the command').item.json"
