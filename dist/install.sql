@@ -1,4 +1,4 @@
--- SCI AI Operating Team — full install. Generated 2026-11-07. Run ONCE on a fresh project.
+-- SCI AI Operating Team — full install. Generated 2026-11-08. Run ONCE on a fresh project.
 begin;
 
 -- >>> 0001_core_schema.sql
@@ -1317,5 +1317,11 @@ end $$;
 
 grant execute on function sci.status_summary() to sci_approver, agent_exec_assistant;
 grant execute on function sci.handle_telegram(text, text, uuid, text) to sci_approver;
+
+-- Helper functions used INSIDE the outbox safety trigger must be callable by every
+-- login that can change outbox rows (found by the n8n end-to-end test).
+grant execute on function sci.outbound_transition_ok(sci.outbound_status, sci.outbound_status)
+  to agent_sales, agent_customer_service, agent_social, agent_sender, sci_approver;
+grant execute on function sci.is_suppressed(citext) to sci_approver;
 
 commit;

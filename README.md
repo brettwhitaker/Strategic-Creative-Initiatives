@@ -16,7 +16,7 @@ The operating system behind Strategic Creative Initiatives' AI team: the Sales R
 - Daily and monthly AI budgets per agent, checked before every AI call.
 - One switch pauses everything. Every change is logged and can be undone.
 
-Run `scripts/test_local.sh` to prove all of the above (42 automated tests).
+Run `scripts/test_local.sh` to prove all of the above (53 database tests + end-to-end n8n workflow tests).
 
 ## Folders
 
@@ -31,7 +31,7 @@ Run `scripts/test_local.sh` to prove all of the above (42 automated tests).
 ## Status
 
 - [x] **Task 1**: Database schema, security, audit, SCI knowledge, test data
-- [ ] **Task 2**: n8n guard step, error alerts, cost logging
-- [ ] **Task 3**: Telegram bot: approvals, /pause, /status
+- [x] **Task 2**: n8n guard step, error alerts, cost logging
+- [x] **Task 3**: Telegram bot: approvals, /pause, /status
 - [ ] **Task 4**: Sales: prospect research + qualification
 - [ ] **Task 5**: Sales: outreach drafts → approval card (draft only)

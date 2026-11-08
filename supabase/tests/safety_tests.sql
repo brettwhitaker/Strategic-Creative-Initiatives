@@ -131,6 +131,8 @@ select t.expect_ok   ('Sales can check suppression via function', $$select sci.i
 select t.expect_ok   ('Sales can create a draft',
   $$insert into sci.outbound_actions(created_by, channel, recipient, body, idempotency_key, is_test)
     values ('sales','email','dana@riverbendplumbing.test','v2','outreach:d1:step2:email', true)$$, 'agent_sales');
+select t.expect_ok   ('Sales can submit its draft for approval',
+  $$update sci.outbound_actions set status='pending_approval' where idempotency_key='outreach:d1:step2:email'$$, 'agent_sales');
 select t.expect_error('Sales cannot create drafts pretending to be another agent',
   $$insert into sci.outbound_actions(created_by, channel, recipient, body, idempotency_key, is_test)
     values ('customer_service','email','dana@riverbendplumbing.test','v3','k-imp', true)$$, 'agent_sales');
@@ -180,8 +182,8 @@ insert into sci.outbound_actions(id, created_by, channel, recipient, body, idemp
 values ('00000000-0000-0000-0000-00000000e003','sales','email','dana@riverbendplumbing.test','Draft','tg-test','pending_approval', true);
 insert into sci.approvals(id, subject_table, subject_id, summary)
 values ('00000000-0000-0000-0000-00000000f003','outbound_actions','00000000-0000-0000-0000-00000000e003','tg test');
-select t.assert('bot: Reject button rejects the draft',
-  sci.handle_telegram('decision','111111','00000000-0000-0000-0000-00000000f003','rejected') like '❌%');
+select t.expect_ok('bot login can press Reject (runs with the bot''s limited rights)',
+  $$select sci.handle_telegram('decision','111111','00000000-0000-0000-0000-00000000f003','rejected')$$, 'sci_approver');
 select t.assert('…and the draft is marked rejected',
   (select status = 'rejected' from sci.outbound_actions where id='00000000-0000-0000-0000-00000000e003'));
 select t.assert('bot: pressing a button twice is harmless',
