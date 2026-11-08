@@ -306,12 +306,33 @@ update t_ctx set ctx = ctx || jsonb_build_object('saved', sci.sales_save_outreac
 reset role;
 select t.assert('draft lands in the outbox awaiting approval, with the legal footer added by the system',
   (select status = 'pending_approval' and recipient = 'dana@riverbendplumbing.test' and body like '%Founder, Strategic Creative Initiatives LLC%reply and let me know.%'
-     from sci.outbound_actions where idempotency_key = 'outreach:00000000-0000-0000-0000-0000000000d1:step1:email'));
+     from sci.outbound_actions where id = (select (ctx->'saved'->>'outbound_id')::uuid from t_ctx)));
 select t.assert('approval card warns while the mailing address is missing',
-  (select ctx->'saved'->>'card' like '%Mailing address not set yet%' and ctx->'saved'->>'card' like '%Sending is OFF%' from t_ctx));
+  (select ctx->'saved'->>'card' like '%Mailing address not set yet%' and ctx->'saved'->>'card' ilike '%sending is OFF%' from t_ctx));
 select t.assert('prospect moves to drafted; task done',
   (select stage = 'drafted' from sci.prospects where id = '00000000-0000-0000-0000-0000000000d1')
   and (select status = 'done' from sci.tasks where dedupe_key = 'draft_outreach:00000000-0000-0000-0000-0000000000d1'));
+select t.assert('card shows a short reference for reply-with-notes', (select ctx->'saved'->>'card' like '%Ref D-%' from t_ctx));
+select t.assert('bot: replying to the card with notes queues a redraft',
+  sci.handle_telegram('redraft_note','111111',null,(select left(ctx->'saved'->>'approval_id', 8) from t_ctx),'Warmer opening please; skip the dates.') like '✏️ Got it%following your notes%');
+select t.assert('…the old draft is rejected (kept as history)',
+  (select status = 'rejected' from sci.outbound_actions where id = (select (ctx->'saved'->>'outbound_id')::uuid from t_ctx)));
+select t.assert('bot: asking twice does not queue a second redraft',
+  sci.handle_telegram('redraft','111111',(select (ctx->'saved'->>'approval_id')::uuid from t_ctx)) like 'ℹ️%');
+update t_ctx set ctx = sci.sales_start_outreach((select id from sci.tasks where dedupe_key = 'draft_outreach:00000000-0000-0000-0000-0000000000d1:redraft' and status = 'queued'), 'exec-o2');
+select t.assert('redraft context carries the owner''s notes and the previous draft text',
+  (select ctx->>'owner_notes' = 'Warmer opening please; skip the dates.' and ctx->'previous_draft'->>'body' like 'Hi Dana,%'
+          and ctx->'previous_draft'->>'body' not like '%reply and let me know%' from t_ctx));
+update t_ctx set ctx = ctx || jsonb_build_object('saved', sci.sales_save_outreach((ctx->>'run_id')::uuid, (ctx->>'task_id')::uuid,
+  '{"subject":"Hello from a local writer","body":"Hi Dana,\n\nI''m Brett, a writer here in Northeast Florida. Your customers clearly trust you, and I''d love to help more neighbors find you. If the timing isn''t right, no worries at all.","angle":"content","finding_ids_used":[],"note_for_brett":"Warmer per your notes."}'::jsonb,
+  '{"input_tokens":5000,"output_tokens":600}'::jsonb));
+select t.assert('the new version is saved with its own key and labeled on the card',
+  (select ctx->'saved'->>'card' like '%(version %' from t_ctx)
+  and (select idempotency_key like 'outreach:00000000-0000-0000-0000-0000000000d1:step1:email:v%' and status = 'pending_approval'
+         from sci.outbound_actions where id = (select (ctx->'saved'->>'outbound_id')::uuid from t_ctx)));
+select t.expect_error('only one ACTIVE first-touch per business',
+  $$insert into sci.outbound_actions(created_by, channel, prospect_id, recipient, body, idempotency_key, status, is_test)
+    values ('sales','email','00000000-0000-0000-0000-0000000000d1','dana@riverbendplumbing.test','x','outreach:00000000-0000-0000-0000-0000000000d1:step1:email:v9','pending_approval', true)$$);
 select t.assert('the bot can approve the draft card', sci.handle_telegram('decision','111111',(select (ctx->'saved'->>'approval_id')::uuid from t_ctx),'approved') like '✅%');
 update sci.sender_profile set mailing_address = '123 Test St, Testville FL 00000' where id;
 select t.assert('footer uses the mailing address once set', sci.email_footer() like '%123 Test St, Testville FL 00000%');

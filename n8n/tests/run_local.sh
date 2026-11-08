@@ -35,6 +35,7 @@ check "draft moved to approved (still can't send: sending OFF)" "select status='
 check "stranger's /pause was ignored"                  "select not global_pause from sci.system_controls"
 grep -q "SCI status" "$WORK/bot.out" && echo "PASS /status reply was produced" || { echo "FAIL /status"; cat "$WORK/bot.out"; exit 1; }
 check "owner's /prospect added a business; stranger's did not" "select exists(select 1 from sci.organizations where name='Bartram Trail Dental') and not exists(select 1 from sci.organizations where name='Sneaky Biz')"
+grep -q "couldn't match that reply to a draft" "$WORK/bot.out" && echo "PASS reply-with-notes is recognized (unknown ref answered politely)" || { echo "FAIL reply notes"; exit 1; }
 grep -q "Approved. (Sending is OFF" "$WORK/bot.out" && echo "PASS approval card text gets updated" || { echo "FAIL card update"; cat "$WORK/bot.out"; exit 1; }
 
 echo "== 3. Sales research workflow (Claude replaced by a scripted stand-in: pause, then result)"
@@ -85,5 +86,6 @@ AP=$("${PSQL[@]}" -c "select a.id from sci.approvals a join sci.outbound_actions
 grep -q "ap:$AP:approved" "$WORK/drafts.out" && echo "PASS approval card carries Approve button for this draft" || { echo "FAIL draft card"; exit 1; }
 grep -q "not provided" "$WORK/drafts.out" && echo "PASS card flags a cited finding that wasn't provided" || { echo "FAIL flag"; exit 1; }
 "$N8N" execute --id=testDrafts --rawOutput > "$WORK/drafts2.out" 2>&1 || true
+grep -q "rd:$AP" "$WORK/drafts.out" && echo "PASS card carries the Redraft button" || { echo "FAIL redraft button"; exit 1; }
 check "running again with nothing queued creates no duplicate" "select count(*)=1 from sci.outbound_actions where idempotency_key like 'outreach:%:step1:email'"
 echo "ALL N8N WORKFLOW TESTS PASSED"

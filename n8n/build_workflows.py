@@ -74,6 +74,8 @@ $input.all().forEach((item, i) => {
     if (m) { kind = 'decision'; target = m[1]; decision = m[2]; }
     m = /^dc:([0-9a-f-]{36}):(research|skip)$/.exec(cb.data || '');
     if (m) { kind = 'candidate'; target = m[1]; decision = m[2]; }
+    m = /^rd:([0-9a-f-]{36})$/.exec(cb.data || '');
+    if (m) { kind = 'redraft'; target = m[1]; }
   } else if (msg && typeof msg.text === 'string') {
     const text = msg.text.trim();
     const cmd = text.split(/\s+/)[0].split('@')[0].toLowerCase();
@@ -81,6 +83,10 @@ $input.all().forEach((item, i) => {
       kind = cmd.slice(1);
       arg = text.slice(text.split(/\s+/)[0].length).trim().slice(0, 200);
     }
+    // A reply to a draft card = notes for a rewrite.
+    const replied = msg.reply_to_message && msg.reply_to_message.text || '';
+    const ref = /Ref D-([0-9a-f]{8})/.exec(replied);
+    if (kind === 'ignore' && ref && !text.startsWith('/')) { kind = 'redraft_note'; decision = ref[1]; arg = text.slice(0, 1500); }
   }
   if (kind === 'ignore') return;
   out.push({ json: {
@@ -541,7 +547,9 @@ const request = {
     'Write the first-touch email for this prospect and finish by calling submit_draft.\n\n' +
     '<prospect>\n' + JSON.stringify(ctx.prospect, null, 2) + '\n</prospect>\n\n' +
     '<verified_findings>\n' + JSON.stringify(ctx.verified_findings, null, 2) + '\n</verified_findings>\n\n' +
-    '<discovery_signal>\n' + JSON.stringify(ctx.discovery_signal) + '\n</discovery_signal>' }],
+    '<discovery_signal>\n' + JSON.stringify(ctx.discovery_signal) + '\n</discovery_signal>' +
+    (ctx.previous_draft ? '\n\n<previous_draft>\nSubject: ' + ctx.previous_draft.subject + '\n\n' + ctx.previous_draft.body + '\n</previous_draft>' : '') +
+    (ctx.owner_notes ? '\n\n<owner_notes>\n' + ctx.owner_notes + '\n</owner_notes>' : '') }],
 };
 return [{ json: { state: {
   ctx: { run_id: ctx.run_id, task_id: ctx.task_id, business: ctx.prospect.business_name,
@@ -598,6 +606,8 @@ drafts = workflow("SCI – Sales: Outreach Drafts", [
         "inlineKeyboard": {"rows": [{"row": {"buttons": [
             {"text": "✅ Approve", "additionalFields": {"callback_data": "={{ 'ap:' + $json.saved.approval_id + ':approved' }}"}},
             {"text": "❌ Reject", "additionalFields": {"callback_data": "={{ 'ap:' + $json.saved.approval_id + ':rejected' }}"}},
+        ]}}, {"row": {"buttons": [
+          {"text": "✏️ Redraft", "additionalFields": {"callback_data": "={{ 'rd:' + $json.saved.approval_id }}"}},
         ]}}]}}),
     pg("Record failure", "select sci.sales_fail_research($1::uuid, $2::uuid, $3, $4::jsonb)",
        "={{ [ $json.ctx.run_id, $json.ctx.task_id, $json.error, JSON.stringify($json.usage) ] }}", [3120, 250], "sales"),

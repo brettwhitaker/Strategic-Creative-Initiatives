@@ -21,9 +21,10 @@ def telegram_to_set(n):
     fields = {k: p[k] for k in ("chatId", "text", "queryId", "messageId") if k in p}
     if "additionalFields" in p and "text" in p["additionalFields"]:
         fields["answerText"] = p["additionalFields"]["text"]
+    k = 0
     for r in p.get("inlineKeyboard", {}).get("rows", []):
-        for i, b in enumerate(r["row"]["buttons"]):
-            fields[f"button{i}"] = b["additionalFields"]["callback_data"]
+        for b in r["row"]["buttons"]:
+            fields[f"button{k}"] = b["additionalFields"]["callback_data"]; k += 1
     n.update(type="n8n-nodes-base.set", typeVersion=3.4, parameters={
         "assignments": {"assignments": [
             {"id": k, "name": k, "value": v if str(v).startswith("=") else str(v), "type": "string"}
@@ -118,6 +119,8 @@ updates = [
     msg("hello there", OWNER),                                 # not a command: ignored
     msg("/prospect Bartram Trail Dental", OWNER),
     msg("/prospect Sneaky Biz", STRANGER),                     # must be ignored
+    {"update_id": 4, "message": {"message_id": 6, "from": {"id": OWNER}, "chat": {"id": OWNER}, "text": "Warmer please",
+                                 "reply_to_message": {"message_id": 3, "text": "📝 Outreach draft ... Ref D-deadbeef"}}},
     {"update_id": 2, "callback_query": {"id": "cbq1", "from": {"id": OWNER}, "data": f"ap:{approval_id}:approved",
                                          "message": {"message_id": 77, "chat": {"id": OWNER}, "text": "📝 Approval needed (TEST)"}}},
     {"update_id": 3, "callback_query": {"id": "cbq2", "from": {"id": STRANGER}, "data": f"ap:{approval_id}:rejected",

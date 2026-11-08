@@ -198,7 +198,7 @@
         50
       ],
       "parameters": {
-        "jsCode": "const ctx = $json.ctx;\nconst k = ctx.knowledge || {};\nconst knowledge = ['positioning', 'services', 'outreach_rules']\n  .map(key => '## ' + key.toUpperCase() + '\\n' + String(k[key] || '').trim()).join('\\n\\n');\nconst request = {\n  model: ctx.model, max_tokens: 8000,\n  thinking: { type: 'adaptive' }, output_config: { effort: ctx.effort }, fallbacks: 'default',\n  system: [\n    { type: 'text', text: String(ctx.system_text).trim() },\n    { type: 'text', text: 'SCI BUSINESS KNOWLEDGE\\n\\n' + knowledge, cache_control: { type: 'ephemeral' } },\n  ],\n  tools: [{\"name\": \"submit_draft\", \"description\": \"Submit the email draft. Call exactly once.\", \"strict\": true, \"input_schema\": {\"type\": \"object\", \"additionalProperties\": false, \"required\": [\"subject\", \"body\", \"angle\", \"finding_ids_used\", \"note_for_brett\"], \"properties\": {\"subject\": {\"type\": \"string\", \"description\": \"Honest subject line, under 8 words\"}, \"body\": {\"type\": \"string\", \"description\": \"Email body from greeting to the ask. NO signature, address or opt-out line.\"}, \"angle\": {\"type\": \"string\", \"enum\": [\"content\", \"social\", \"hiring\", \"hometown\", \"proof_point\", \"other\"]}, \"finding_ids_used\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}}, \"note_for_brett\": {\"type\": \"string\", \"description\": \"One sentence: why this angle; anything to double-check\"}}}}],\n  tool_choice: { type: 'auto' },\n  messages: [{ role: 'user', content:\n    'Write the first-touch email for this prospect and finish by calling submit_draft.\\n\\n' +\n    '<prospect>\\n' + JSON.stringify(ctx.prospect, null, 2) + '\\n</prospect>\\n\\n' +\n    '<verified_findings>\\n' + JSON.stringify(ctx.verified_findings, null, 2) + '\\n</verified_findings>\\n\\n' +\n    '<discovery_signal>\\n' + JSON.stringify(ctx.discovery_signal) + '\\n</discovery_signal>' }],\n};\nreturn [{ json: { state: {\n  ctx: { run_id: ctx.run_id, task_id: ctx.task_id, business: ctx.prospect.business_name,\n         finding_ids: (ctx.verified_findings || []).map(f => f.id) },\n  request, iter: 0, retrieved: [],\n  usage: { model: ctx.model, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, web_searches: 0 },\n} } }];"
+        "jsCode": "const ctx = $json.ctx;\nconst k = ctx.knowledge || {};\nconst knowledge = ['positioning', 'services', 'outreach_rules']\n  .map(key => '## ' + key.toUpperCase() + '\\n' + String(k[key] || '').trim()).join('\\n\\n');\nconst request = {\n  model: ctx.model, max_tokens: 8000,\n  thinking: { type: 'adaptive' }, output_config: { effort: ctx.effort }, fallbacks: 'default',\n  system: [\n    { type: 'text', text: String(ctx.system_text).trim() },\n    { type: 'text', text: 'SCI BUSINESS KNOWLEDGE\\n\\n' + knowledge, cache_control: { type: 'ephemeral' } },\n  ],\n  tools: [{\"name\": \"submit_draft\", \"description\": \"Submit the email draft. Call exactly once.\", \"strict\": true, \"input_schema\": {\"type\": \"object\", \"additionalProperties\": false, \"required\": [\"subject\", \"body\", \"angle\", \"finding_ids_used\", \"note_for_brett\"], \"properties\": {\"subject\": {\"type\": \"string\", \"description\": \"Honest subject line, under 8 words\"}, \"body\": {\"type\": \"string\", \"description\": \"Email body from greeting to the ask. NO signature, address or opt-out line.\"}, \"angle\": {\"type\": \"string\", \"enum\": [\"content\", \"social\", \"hiring\", \"hometown\", \"proof_point\", \"other\"]}, \"finding_ids_used\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}}, \"note_for_brett\": {\"type\": \"string\", \"description\": \"One sentence: why this angle; anything to double-check\"}}}}],\n  tool_choice: { type: 'auto' },\n  messages: [{ role: 'user', content:\n    'Write the first-touch email for this prospect and finish by calling submit_draft.\\n\\n' +\n    '<prospect>\\n' + JSON.stringify(ctx.prospect, null, 2) + '\\n</prospect>\\n\\n' +\n    '<verified_findings>\\n' + JSON.stringify(ctx.verified_findings, null, 2) + '\\n</verified_findings>\\n\\n' +\n    '<discovery_signal>\\n' + JSON.stringify(ctx.discovery_signal) + '\\n</discovery_signal>' +\n    (ctx.previous_draft ? '\\n\\n<previous_draft>\\nSubject: ' + ctx.previous_draft.subject + '\\n\\n' + ctx.previous_draft.body + '\\n</previous_draft>' : '') +\n    (ctx.owner_notes ? '\\n\\n<owner_notes>\\n' + ctx.owner_notes + '\\n</owner_notes>' : '') }],\n};\nreturn [{ json: { state: {\n  ctx: { run_id: ctx.run_id, task_id: ctx.task_id, business: ctx.prospect.business_name,\n         finding_ids: (ctx.verified_findings || []).map(f => f.id) },\n  request, iter: 0, retrieved: [],\n  usage: { model: ctx.model, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, web_searches: 0 },\n} } }];"
       }
     },
     {
@@ -406,6 +406,18 @@
                     "text": "❌ Reject",
                     "additionalFields": {
                       "callback_data": "={{ 'ap:' + $json.saved.approval_id + ':rejected' }}"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "✏️ Redraft",
+                    "additionalFields": {
+                      "callback_data": "={{ 'rd:' + $json.saved.approval_id }}"
                     }
                   }
                 ]
