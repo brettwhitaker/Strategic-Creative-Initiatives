@@ -1,0 +1,671 @@
+{
+  "name": "SCI – Sales: Weekly Prospect Discovery",
+  "nodes": [
+    {
+      "id": "2710f622-b7ad-5c58-bdb3-025bcc1be062",
+      "name": "Run now (manual)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -100
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "972c4ccd-57e5-52e5-b439-885591083bd1",
+      "name": "Mondays 9:40 AM ET",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        100
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "40 9 * * 1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "b30c62a1-0737-5aa9-b099-efb9658afbe8",
+      "name": "Safety check (pause + budget)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select ok, reason from sci.guard_check('sales', 0.80)",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "SCI DB – Sales"
+        }
+      }
+    },
+    {
+      "id": "a590b2fe-1942-5d96-bb2d-5aa0b05453c8",
+      "name": "OK to run?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "OK to run?",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "9ce2e2cc-54db-5d32-879d-0e68e787fc97",
+      "name": "Pick category + area",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select sci.sales_start_discovery($1) as ctx",
+        "options": {
+          "queryReplacement": "={{ [ String($execution.id) ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "SCI DB – Sales"
+        }
+      }
+    },
+    {
+      "id": "c40e7655-5a9e-5157-8ac9-f43f1b20de94",
+      "name": "Build Claude request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const ctx = $json.ctx;\nconst k = ctx.knowledge || {};\nconst knowledge = ['positioning', 'icp', 'services', 'evidence_policy']\n  .map(key => '## ' + key.toUpperCase() + '\\n' + String(k[key] || '').trim()).join('\\n\\n');\nconst request = {\n  model: ctx.model, max_tokens: 16000,\n  thinking: { type: 'adaptive' }, output_config: { effort: ctx.effort }, fallbacks: 'default',\n  system: [\n    { type: 'text', text: String(ctx.system_text).trim() },\n    { type: 'text', text: 'SCI BUSINESS KNOWLEDGE\\n\\n' + knowledge, cache_control: { type: 'ephemeral' } },\n  ],\n  tools: [\n    { type: 'web_search_20260209', name: 'web_search', max_uses: 6 },\n    { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 6, max_content_tokens: 8000 },\n    {\"name\": \"submit_candidates\", \"description\": \"Submit the prospect candidates you found. Call exactly once, at the end.\", \"strict\": true, \"input_schema\": {\"type\": \"object\", \"additionalProperties\": false, \"required\": [\"candidates\"], \"properties\": {\"candidates\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"additionalProperties\": false, \"required\": [\"name\", \"website\", \"city\", \"signal_type\", \"signal\", \"signal_status\", \"source_url\", \"evidence_quote\"], \"properties\": {\"name\": {\"type\": \"string\"}, \"website\": {\"type\": \"string\", \"description\": \"Official website; empty string if not found\"}, \"city\": {\"type\": \"string\"}, \"signal_type\": {\"type\": \"string\", \"enum\": [\"hiring\", \"growth\", \"stale_content\", \"weak_messaging\", \"other\"]}, \"signal\": {\"type\": \"string\", \"description\": \"One sentence: what shows they need help now\"}, \"signal_status\": {\"type\": \"string\", \"enum\": [\"verified\", \"inferred\"]}, \"source_url\": {\"type\": \"string\", \"description\": \"Page retrieved this session that shows the signal; empty if inferred\"}, \"evidence_quote\": {\"type\": \"string\", \"description\": \"Exact short quote from that page; empty if inferred\"}}}}}}},\n  ],\n  tool_choice: { type: 'auto' },\n  messages: [{ role: 'user', content:\n    'Find prospect candidates.\\nCategory: ' + ctx.segment.category + '\\nArea: ' + ctx.segment.area + ', Florida\\n\\n' +\n    '<exclude>\\n' + (ctx.exclude || []).join('\\n') + '\\n</exclude>\\n\\nFinish by calling submit_candidates.' }],\n};\nreturn [{ json: { state: {\n  ctx: { run_id: ctx.run_id, segment: ctx.segment },\n  request, iter: 0, retrieved: [],\n  usage: { model: ctx.model, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, web_searches: 0 },\n} } }];"
+      }
+    },
+    {
+      "id": "b8941e29-0956-5e82-9d3e-1ab0ebd2a952",
+      "name": "Prepare Claude call",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        0
+      ],
+      "parameters": {
+        "jsCode": "return $input.all();"
+      }
+    },
+    {
+      "id": "b81e8c7f-3765-5561-a57e-de52bb6412dc",
+      "name": "Call Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "anthropic-beta",
+              "value": "server-side-fallback-2026-07-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.state.request) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "credentials": {
+        "anthropicApi": {
+          "id": "",
+          "name": "SCI – Claude (Sales)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "b4238d5e-d692-5efc-b0b2-323969cb7025",
+      "name": "Collect results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Add up usage, remember which URLs were actually retrieved, and continue if Claude paused.\nconst st = JSON.parse(JSON.stringify($('Prepare Claude call').last().json.state));\nconst res = $json;\nconst u = res.usage || {};\nst.usage.input_tokens += u.input_tokens || 0;\nst.usage.output_tokens += u.output_tokens || 0;\nst.usage.cache_read_tokens += u.cache_read_input_tokens || 0;\nst.usage.cache_write_tokens += u.cache_creation_input_tokens || 0;\nst.usage.web_searches += (u.server_tool_use && u.server_tool_use.web_search_requests) || 0;\nconst walk = (v, inResult) => {\n  if (v == null) return;\n  if (typeof v === 'string') { if (inResult) for (const m of v.matchAll(/https?:\\/\\/[^\\s\"'<>)\\]]+/g)) st.retrieved.push(m[0]); return; }\n  if (Array.isArray(v)) { v.forEach(x => walk(x, inResult)); return; }\n  if (typeof v === 'object') {\n    const isRes = inResult || (typeof v.type === 'string' && v.type.endsWith('_tool_result'));\n    for (const val of Object.values(v)) walk(val, isRes);\n  }\n};\nwalk(res.content, false);\nst.iter += 1;\nst.stop_reason = res.stop_reason;\nif (res.stop_reason === 'pause_turn' && st.iter < 5) {\n  st.request.messages.push({ role: 'assistant', content: res.content });\n  return [{ json: { state: st, again: true } }];\n}\nst.final_content = res.content || [];\ndelete st.request;\nreturn [{ json: { state: st, again: false } }];"
+      }
+    },
+    {
+      "id": "bbf210f3-d962-5740-8917-57d6a7b35f3f",
+      "name": "Claude paused? Continue",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1920,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "Claude paused? Continue",
+              "leftValue": "={{ $json.again }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "41c3e782-f754-560d-872b-e933f62810fa",
+      "name": "Check the candidates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2160,
+        100
+      ],
+      "parameters": {
+        "jsCode": "// A 'verified' signal must point to a page Claude actually retrieved; otherwise it becomes 'inferred'.\nconst st = $json.state;\nconst norm = s => {\n  const m = /^https?:\\/\\/(?:www\\.)?([^\\/?#\\s]+)([^?#\\s]*)/i.exec(String(s || '').trim());\n  return m ? (m[1] + m[2].replace(/\\/+$/, '')).toLowerCase() : null;\n};\nconst seen = new Set(st.retrieved.map(norm).filter(Boolean));\nconst call = st.final_content.find(b => b.type === 'tool_use' && b.name === 'submit_candidates');\nif (!call) return [{ json: { ok: false, ctx: st.ctx, usage: st.usage,\n  error: 'Discovery finished without submitting candidates (stop reason: ' + st.stop_reason + ')' } }];\nconst r = typeof call.input === 'string' ? JSON.parse(call.input) : call.input;\nr.candidates = (r.candidates || []).slice(0, 8).map(c => {\n  if (c.signal_status === 'verified' && !(c.source_url && c.evidence_quote && seen.has(norm(c.source_url)))) {\n    return { ...c, signal_status: 'inferred', source_url: '', evidence_quote: '' };\n  }\n  if (c.signal_status !== 'verified') return { ...c, signal_status: 'inferred', source_url: '', evidence_quote: '' };\n  return c;\n});\nreturn [{ json: { ok: true, result: r, ctx: st.ctx, usage: st.usage } }];"
+      }
+    },
+    {
+      "id": "4c594d87-ff9d-5b09-a08e-5f093fb592b0",
+      "name": "Got a result?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2400,
+        100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "Got a result?",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "55ba7ed7-5097-5020-9ead-93dd1b688583",
+      "name": "Save new candidates",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2640,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from sci.sales_save_discovery($1::uuid, $2::jsonb, $3::jsonb)",
+        "options": {
+          "queryReplacement": "={{ [ $json.ctx.run_id, JSON.stringify($json.result), JSON.stringify($json.usage) ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "SCI DB – Sales"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "6370f7a5-0918-56fb-a508-3343d9069c7c",
+      "name": "Prepare messages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2880,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// One header message, then one card (with Research / Skip buttons) per new candidate.\nconst seg = $('Check the candidates').first().json.ctx.segment;\nconst rows = $input.all().map(i => i.json).filter(r => r.candidate_id);\nif (!rows.length) return [{ json: { kind: 'header',\n  text: '🧭 Weekly discovery (' + seg.category + ' in ' + seg.area + '): no new candidates this time. Next week tries a different category/area.' } }];\nreturn [{ json: { kind: 'header', text: rows[0].header } },\n        ...rows.map(r => ({ json: { kind: 'card', text: r.card, candidate_id: r.candidate_id } }))];"
+      }
+    },
+    {
+      "id": "7fbb745b-ce11-5c73-b469-fc3d78f16ad6",
+      "name": "Candidate card?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3120,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "Candidate card?",
+              "leftValue": "={{ $json.kind }}",
+              "rightValue": "card",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "589557e1-dc95-52c1-8d14-333faeb8189e",
+      "name": "Send candidate card",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3360,
+        -100
+      ],
+      "parameters": {
+        "chatId": "8995080526",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        },
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "🔎 Research",
+                    "additionalFields": {
+                      "callback_data": "={{ 'dc:' + $json.candidate_id + ':research' }}"
+                    }
+                  },
+                  {
+                    "text": "⏭ Skip",
+                    "additionalFields": {
+                      "callback_data": "={{ 'dc:' + $json.candidate_id + ':skip' }}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "SCI – Telegram Bot"
+        }
+      }
+    },
+    {
+      "id": "c46a7fe3-d040-5ffa-be2e-fc27f972be2b",
+      "name": "Send summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3360,
+        100
+      ],
+      "parameters": {
+        "chatId": "8995080526",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "SCI – Telegram Bot"
+        }
+      }
+    },
+    {
+      "id": "39275fce-062a-59a8-9eb5-913054710739",
+      "name": "Record failure",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2640,
+        200
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update sci.agent_runs set status = 'failed', error = left($2, 2000), finished_at = now() where id = $1::uuid",
+        "options": {
+          "queryReplacement": "={{ [ $json.ctx.run_id, $json.error ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "SCI DB – Sales"
+        }
+      }
+    },
+    {
+      "id": "b866262d-9de1-5346-87f7-d2dcb7f27be5",
+      "name": "Tell Brett it failed",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2880,
+        200
+      ],
+      "parameters": {
+        "chatId": "8995080526",
+        "text": "={{ '⚠️ Weekly prospect discovery failed: ' + $('Check the candidates').item.json.error }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "SCI – Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Run now (manual)": {
+      "main": [
+        [
+          {
+            "node": "Safety check (pause + budget)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mondays 9:40 AM ET": {
+      "main": [
+        [
+          {
+            "node": "Safety check (pause + budget)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Safety check (pause + budget)": {
+      "main": [
+        [
+          {
+            "node": "OK to run?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OK to run?": {
+      "main": [
+        [
+          {
+            "node": "Pick category + area",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick category + area": {
+      "main": [
+        [
+          {
+            "node": "Build Claude request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude request": {
+      "main": [
+        [
+          {
+            "node": "Prepare Claude call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Claude call": {
+      "main": [
+        [
+          {
+            "node": "Call Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude": {
+      "main": [
+        [
+          {
+            "node": "Collect results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect results": {
+      "main": [
+        [
+          {
+            "node": "Claude paused? Continue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude paused? Continue": {
+      "main": [
+        [
+          {
+            "node": "Prepare Claude call",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check the candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check the candidates": {
+      "main": [
+        [
+          {
+            "node": "Got a result?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Got a result?": {
+      "main": [
+        [
+          {
+            "node": "Save new candidates",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save new candidates": {
+      "main": [
+        [
+          {
+            "node": "Prepare messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare messages": {
+      "main": [
+        [
+          {
+            "node": "Candidate card?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Candidate card?": {
+      "main": [
+        [
+          {
+            "node": "Send candidate card",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record failure": {
+      "main": [
+        [
+          {
+            "node": "Tell Brett it failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": true,
+    "timezone": "America/New_York"
+  },
+  "active": false,
+  "pinData": {},
+  "tags": []
+}

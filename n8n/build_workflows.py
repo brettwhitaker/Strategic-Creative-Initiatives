@@ -68,20 +68,26 @@ $input.all().forEach((item, i) => {
   const u = item.json;
   const cb = u.callback_query;
   const msg = u.message;
-  let kind = 'ignore', approvalId = null, decision = null;
+  let kind = 'ignore', target = null, decision = null, arg = null;
   if (cb) {
-    const m = /^ap:([0-9a-f-]{36}):(approved|rejected)$/.exec(cb.data || '');
-    if (m) { kind = 'decision'; approvalId = m[1]; decision = m[2]; }
+    let m = /^ap:([0-9a-f-]{36}):(approved|rejected)$/.exec(cb.data || '');
+    if (m) { kind = 'decision'; target = m[1]; decision = m[2]; }
+    m = /^dc:([0-9a-f-]{36}):(research|skip)$/.exec(cb.data || '');
+    if (m) { kind = 'candidate'; target = m[1]; decision = m[2]; }
   } else if (msg && typeof msg.text === 'string') {
-    const cmd = msg.text.trim().split(/\s+/)[0].split('@')[0].toLowerCase();
-    if (['/pause', '/resume', '/status', '/help', '/start'].includes(cmd)) kind = cmd.slice(1);
+    const text = msg.text.trim();
+    const cmd = text.split(/\s+/)[0].split('@')[0].toLowerCase();
+    if (['/pause', '/resume', '/status', '/help', '/start', '/prospect'].includes(cmd)) {
+      kind = cmd.slice(1);
+      arg = text.slice(text.split(/\s+/)[0].length).trim().slice(0, 200);
+    }
   }
   if (kind === 'ignore') return;
   out.push({ json: {
-    kind, approvalId, decision,
+    kind, target, decision, arg,
     fromId: String(cb ? cb.from.id : msg.from.id),
     chatId: String(cb ? cb.message.chat.id : msg.chat.id),
-    callbackId: cb ? cb.id : null,
+    callbackId: cb ? cb.id : '',
     messageId: cb ? cb.message.message_id : null,
     originalText: cb ? (cb.message.text || '') : '',
   }, pairedItem: { item: i } });
@@ -95,8 +101,8 @@ telegram_bot = workflow("SCI – Telegram Bot", [
          {"updates": ["message", "callback_query"], "additionalFields": {}}, [0, 0], CRED["telegram"]),
     node("Read the command", "n8n-nodes-base.code", 2, {"jsCode": PARSE_JS}, [240, 0]),
     pg("Ask the database (checks it's you)",
-       "select sci.handle_telegram($1, $2, nullif($3, '')::uuid, nullif($4, '')) as reply",
-       "={{ [ $json.kind, $json.fromId, $json.approvalId || '', $json.decision || '' ] }}",
+       "select sci.handle_telegram($1, $2, nullif($3, '')::uuid, nullif($4, ''), nullif($5, '')) as reply",
+       "={{ [ $json.kind, $json.fromId, $json.target || '', $json.decision || '', $json.arg || '' ] }}",
        [480, 0], "approver"),
     node("Is it from Brett?", "n8n-nodes-base.if", 2.2, {
         "conditions": {"options": {"caseSensitive": True, "leftValue": "", "typeValidation": "loose", "version": 2},
@@ -106,8 +112,8 @@ telegram_bot = workflow("SCI – Telegram Bot", [
         "options": {}}, [720, 0]),
     node("Was it a button?", "n8n-nodes-base.if", 2.2, {
         "conditions": {"options": {"caseSensitive": True, "leftValue": "", "typeValidation": "loose", "version": 2},
-                       "conditions": [{"id": "is-button", "leftValue": f"={{{{ {P}.kind }}}}", "rightValue": "decision",
-                                       "operator": {"type": "string", "operation": "equals"}}],
+                       "conditions": [{"id": "is-button", "leftValue": f"={{{{ {P}.callbackId }}}}", "rightValue": "",
+                                       "operator": {"type": "string", "operation": "notEmpty", "singleValue": True}}],
                        "combinator": "and"},
         "options": {}}, [960, 0]),
     node("Confirm button press", "n8n-nodes-base.telegram", 1.2, {
@@ -167,11 +173,13 @@ SUBMIT_TOOL = {
     "strict": True,
     "input_schema": {
         "type": "object", "additionalProperties": False,
-        "required": ["business_summary", "industry", "size_estimate", "findings", "score_breakdown",
+        "required": ["business_summary", "official_name", "official_website", "industry", "size_estimate", "findings", "score_breakdown",
                      "top_opportunity", "recommended_service", "secondary_service", "disqualify_reason",
                      "public_contact", "open_questions"],
         "properties": {
             "business_summary": {"type": "string", "description": "2-3 sentences: what they do, who they serve, where."},
+            "official_name": {"type": "string", "description": "The business's official name as shown on its website"},
+            "official_website": {"type": "string", "description": "Official website URL you confirmed; empty string if not found"},
             "industry": {"type": "string"},
             "size_estimate": {"type": "string", "description": "e.g. '10-20 staff (inferred from team page)' or 'unknown'"},
             "findings": {"type": "array", "items": {
@@ -369,10 +377,143 @@ research = workflow("SCI – Sales: Research Prospects", [
         ("Record failure", "Tell Brett it failed")))
 research["settings"]["timezone"] = "America/New_York"
 
+# ---------------------------------------------------------------- 5. Sales: weekly prospect discovery
+CANDIDATES_TOOL = {
+    "name": "submit_candidates",
+    "description": "Submit the prospect candidates you found. Call exactly once, at the end.",
+    "strict": True,
+    "input_schema": {"type": "object", "additionalProperties": False, "required": ["candidates"],
+        "properties": {"candidates": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False,
+            "required": ["name", "website", "city", "signal_type", "signal", "signal_status", "source_url", "evidence_quote"],
+            "properties": {
+                "name": {"type": "string"},
+                "website": {"type": "string", "description": "Official website; empty string if not found"},
+                "city": {"type": "string"},
+                "signal_type": {"type": "string", "enum": ["hiring", "growth", "stale_content", "weak_messaging", "other"]},
+                "signal": {"type": "string", "description": "One sentence: what shows they need help now"},
+                "signal_status": {"type": "string", "enum": ["verified", "inferred"]},
+                "source_url": {"type": "string", "description": "Page retrieved this session that shows the signal; empty if inferred"},
+                "evidence_quote": {"type": "string", "description": "Exact short quote from that page; empty if inferred"}}}}}}}
+
+BUILD_DISCOVERY_JS = r"""
+const ctx = $json.ctx;
+const k = ctx.knowledge || {};
+const knowledge = ['positioning', 'icp', 'services', 'evidence_policy']
+  .map(key => '## ' + key.toUpperCase() + '\n' + String(k[key] || '').trim()).join('\n\n');
+const request = {
+  model: ctx.model, max_tokens: 16000,
+  thinking: { type: 'adaptive' }, output_config: { effort: ctx.effort }, fallbacks: 'default',
+  system: [
+    { type: 'text', text: String(ctx.system_text).trim() },
+    { type: 'text', text: 'SCI BUSINESS KNOWLEDGE\n\n' + knowledge, cache_control: { type: 'ephemeral' } },
+  ],
+  tools: [
+    { type: 'web_search_20260209', name: 'web_search', max_uses: 6 },
+    { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 6, max_content_tokens: 8000 },
+    CANDIDATES_TOOL_JSON,
+  ],
+  tool_choice: { type: 'auto' },
+  messages: [{ role: 'user', content:
+    'Find prospect candidates.\nCategory: ' + ctx.segment.category + '\nArea: ' + ctx.segment.area + ', Florida\n\n' +
+    '<exclude>\n' + (ctx.exclude || []).join('\n') + '\n</exclude>\n\nFinish by calling submit_candidates.' }],
+};
+return [{ json: { state: {
+  ctx: { run_id: ctx.run_id, segment: ctx.segment },
+  request, iter: 0, retrieved: [],
+  usage: { model: ctx.model, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, web_searches: 0 },
+} } }];
+""".strip().replace("CANDIDATES_TOOL_JSON", json.dumps(CANDIDATES_TOOL))
+
+CHECK_CANDIDATES_JS = r"""
+// A 'verified' signal must point to a page Claude actually retrieved; otherwise it becomes 'inferred'.
+const st = $json.state;
+const norm = s => {
+  const m = /^https?:\/\/(?:www\.)?([^\/?#\s]+)([^?#\s]*)/i.exec(String(s || '').trim());
+  return m ? (m[1] + m[2].replace(/\/+$/, '')).toLowerCase() : null;
+};
+const seen = new Set(st.retrieved.map(norm).filter(Boolean));
+const call = st.final_content.find(b => b.type === 'tool_use' && b.name === 'submit_candidates');
+if (!call) return [{ json: { ok: false, ctx: st.ctx, usage: st.usage,
+  error: 'Discovery finished without submitting candidates (stop reason: ' + st.stop_reason + ')' } }];
+const r = typeof call.input === 'string' ? JSON.parse(call.input) : call.input;
+r.candidates = (r.candidates || []).slice(0, 8).map(c => {
+  if (c.signal_status === 'verified' && !(c.source_url && c.evidence_quote && seen.has(norm(c.source_url)))) {
+    return { ...c, signal_status: 'inferred', source_url: '', evidence_quote: '' };
+  }
+  if (c.signal_status !== 'verified') return { ...c, signal_status: 'inferred', source_url: '', evidence_quote: '' };
+  return c;
+});
+return [{ json: { ok: true, result: r, ctx: st.ctx, usage: st.usage } }];
+""".strip()
+
+MESSAGES_JS = r"""
+// One header message, then one card (with Research / Skip buttons) per new candidate.
+const seg = $('Check the candidates').first().json.ctx.segment;
+const rows = $input.all().map(i => i.json).filter(r => r.candidate_id);
+if (!rows.length) return [{ json: { kind: 'header',
+  text: '🧭 Weekly discovery (' + seg.category + ' in ' + seg.area + '): no new candidates this time. Next week tries a different category/area.' } }];
+return [{ json: { kind: 'header', text: rows[0].header } },
+        ...rows.map(r => ({ json: { kind: 'card', text: r.card, candidate_id: r.candidate_id } }))];
+""".strip()
+
+D = "$('Check the candidates').item.json"
+discovery = workflow("SCI – Sales: Weekly Prospect Discovery", [
+    node("Run now (manual)", "n8n-nodes-base.manualTrigger", 1, {}, [0, -100]),
+    node("Mondays 9:40 AM ET", "n8n-nodes-base.scheduleTrigger", 1.2,
+         {"rule": {"interval": [{"field": "cronExpression", "expression": "40 9 * * 1"}]}}, [0, 100]),
+    pg("Safety check (pause + budget)", "select ok, reason from sci.guard_check('sales', 0.80)", None, [240, 0], "sales"),
+    if_node("OK to run?", "={{ $json.ok }}", "true", "", [480, 0]),
+    pg("Pick category + area", "select sci.sales_start_discovery($1) as ctx", "={{ [ String($execution.id) ] }}", [720, 0], "sales"),
+    node("Build Claude request", "n8n-nodes-base.code", 2, {"jsCode": BUILD_DISCOVERY_JS}, [960, 0]),
+    node("Prepare Claude call", "n8n-nodes-base.code", 2, {"jsCode": "return $input.all();"}, [1200, 0]),
+    {**CLAUDE_CALL, "position": [1440, 0]},
+    node("Collect results", "n8n-nodes-base.code", 2, {"jsCode": AFTER_CALL_JS}, [1680, 0]),
+    if_node("Claude paused? Continue", "={{ $json.again }}", "true", "", [1920, 0]),
+    node("Check the candidates", "n8n-nodes-base.code", 2, {"jsCode": CHECK_CANDIDATES_JS}, [2160, 100]),
+    if_node("Got a result?", "={{ $json.ok }}", "true", "", [2400, 100]),
+    {**pg("Save new candidates", "select * from sci.sales_save_discovery($1::uuid, $2::jsonb, $3::jsonb)",
+          "={{ [ $json.ctx.run_id, JSON.stringify($json.result), JSON.stringify($json.usage) ] }}", [2640, 0], "sales"),
+     "alwaysOutputData": True},
+    node("Prepare messages", "n8n-nodes-base.code", 2, {"jsCode": MESSAGES_JS}, [2880, 0]),
+    if_node("Candidate card?", "={{ $json.kind }}", "equals", "card", [3120, 0], typ="string"),
+    tg_send("Send candidate card", OWNER_CHAT_ID, "={{ $json.text }}", [3360, -100], reply_markup={
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {"rows": [{"row": {"buttons": [
+            {"text": "🔎 Research", "additionalFields": {"callback_data": "={{ 'dc:' + $json.candidate_id + ':research' }}"}},
+            {"text": "⏭ Skip", "additionalFields": {"callback_data": "={{ 'dc:' + $json.candidate_id + ':skip' }}"}},
+        ]}}]}}),
+    tg_send("Send summary", OWNER_CHAT_ID, "={{ $json.text }}", [3360, 100]),
+    pg("Record failure", "update sci.agent_runs set status = 'failed', error = left($2, 2000), finished_at = now() where id = $1::uuid",
+       "={{ [ $json.ctx.run_id, $json.error ] }}", [2640, 200], "sales"),
+    tg_send("Tell Brett it failed", OWNER_CHAT_ID,
+            "={{ '⚠️ Weekly prospect discovery failed: ' + " + D + ".error }}", [2880, 200]),
+], link(("Run now (manual)", "Safety check (pause + budget)"),
+        ("Mondays 9:40 AM ET", "Safety check (pause + budget)"),
+        ("Safety check (pause + budget)", "OK to run?"),
+        ("OK to run?", "Pick category + area"),
+        ("Pick category + area", "Build Claude request"),
+        ("Build Claude request", "Prepare Claude call"),
+        ("Prepare Claude call", "Call Claude"),
+        ("Call Claude", "Collect results"),
+        ("Collect results", "Claude paused? Continue"),
+        ("Claude paused? Continue", "Prepare Claude call", 0),
+        ("Claude paused? Continue", "Check the candidates", 1),
+        ("Check the candidates", "Got a result?"),
+        ("Got a result?", "Save new candidates", 0),
+        ("Got a result?", "Record failure", 1),
+        ("Save new candidates", "Prepare messages"),
+        ("Prepare messages", "Candidate card?"),
+        ("Candidate card?", "Send candidate card", 0),
+        ("Candidate card?", "Send summary", 1),
+        ("Record failure", "Tell Brett it failed")))
+discovery["settings"]["timezone"] = "America/New_York"
+
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
     for fname, wf in [("01_error_alerts.json", error_alerts), ("02_telegram_bot.json", telegram_bot),
                       ("03_test_approval_card.json", test_card),
-                      ("04_sales_research.json", research)]:
+                      ("04_sales_research.json", research),
+                      ("05_weekly_discovery.json", discovery)]:
         (OUT / fname).write_text(json.dumps(wf, indent=2, ensure_ascii=False))
         print("wrote", OUT / fname)

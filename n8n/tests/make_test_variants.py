@@ -35,6 +35,19 @@ def telegram_to_set(n):
 MOCK_CLAUDE = r"""
 const st = $json.state;
 if (!st.request || !st.request.model || !Array.isArray(st.request.tools)) throw new Error('bad request built');
+if (st.request.tools.some(t => t.name === 'submit_candidates')) {
+  if (!st.request.messages[0].content.includes('Category:')) throw new Error('segment missing from request');
+  return [{ json: { stop_reason: 'tool_use', usage: { input_tokens: 30000, output_tokens: 2000, server_tool_use: { web_search_requests: 5 } },
+    content: [
+      { type: 'web_search_tool_result', tool_use_id: 'w1', content: [{ type: 'web_search_result', url: 'https://jobs.test/marketing-coordinator', title: 'Jobs' }] },
+      { type: 'tool_use', id: 't2', name: 'submit_candidates', input: { candidates: [
+        { name: 'Ancient City Accounting', website: 'https://ancientcityacct.test', city: 'St. Augustine', signal_type: 'hiring',
+          signal: 'Hiring a marketing coordinator', signal_status: 'verified', source_url: 'https://jobs.test/marketing-coordinator', evidence_quote: 'Marketing Coordinator' },
+        { name: 'Made Up Signal LLC', website: '', city: 'Jacksonville', signal_type: 'growth',
+          signal: 'Opened a second office', signal_status: 'verified', source_url: 'https://never-retrieved.test/news', evidence_quote: 'second office' },
+        { name: 'Riverbend Plumbing & Drain (TEST)', website: 'https://riverbendplumbing.test', city: '', signal_type: 'other',
+          signal: 'already known', signal_status: 'inferred', source_url: '', evidence_quote: '' } ] } } ] } }];
+}
 if (st.iter === 0) return [{ json: { stop_reason: 'pause_turn',
   usage: { input_tokens: 20000, output_tokens: 500, cache_read_input_tokens: 3000, server_tool_use: { web_search_requests: 2 } },
   content: [
@@ -45,7 +58,7 @@ if (st.request.messages.length !== 2) throw new Error('pause_turn continuation d
 return [{ json: { stop_reason: 'tool_use',
   usage: { input_tokens: 25000, output_tokens: 2500, server_tool_use: { web_search_requests: 1 } },
   content: [ { type: 'text', text: 'Submitting.' }, { type: 'tool_use', id: 't1', name: 'submit_research', input: {
-    business_summary: 'Physical therapy clinic in Fleming Island.', industry: 'Healthcare', size_estimate: 'unknown',
+    business_summary: 'Physical therapy clinic in Fleming Island.', official_name: 'Official Name Co', official_website: 'https://www.official-site.test/', industry: 'Healthcare', size_estimate: 'unknown',
     findings: [
       { category: 'website_copy', statement: 'Homepage headline is generic', status: 'verified',
         source_url: 'https://flemingpt.test', evidence_quote: 'Welcome to Fleming PT' },
@@ -80,6 +93,9 @@ def variant(fname, wf_id, fake_updates=None):
     if fname.startswith("04"):
         wf["nodes"] = [n for n in wf["nodes"] if n["type"] != "n8n-nodes-base.scheduleTrigger"]
         wf["connections"].pop("Hourly 8 AM–7 PM ET", None)
+    if fname.startswith("05"):
+        wf["nodes"] = [n for n in wf["nodes"] if n["type"] != "n8n-nodes-base.scheduleTrigger"]
+        wf["connections"].pop("Mondays 9:40 AM ET", None)
     (out / fname).write_text(json.dumps(wf, indent=2, ensure_ascii=False))
 
 OWNER, STRANGER = 111111, 999999
@@ -88,6 +104,8 @@ updates = [
     msg("/status", OWNER),
     msg("/pause", STRANGER),                                   # must be ignored
     msg("hello there", OWNER),                                 # not a command: ignored
+    msg("/prospect Bartram Trail Dental", OWNER),
+    msg("/prospect Sneaky Biz", STRANGER),                     # must be ignored
     {"update_id": 2, "callback_query": {"id": "cbq1", "from": {"id": OWNER}, "data": f"ap:{approval_id}:approved",
                                          "message": {"message_id": 77, "chat": {"id": OWNER}, "text": "📝 Approval needed (TEST)"}}},
     {"update_id": 3, "callback_query": {"id": "cbq2", "from": {"id": STRANGER}, "data": f"ap:{approval_id}:rejected",
@@ -97,4 +115,5 @@ variant("03_test_approval_card.json", "testCard")
 variant("02_telegram_bot.json", "testBot", updates)
 variant("01_error_alerts.json", "testErr")
 variant("04_sales_research.json", "testResearch")
+variant("05_weekly_discovery.json", "testDiscovery")
 print("ok")
