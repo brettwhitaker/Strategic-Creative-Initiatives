@@ -33,3 +33,20 @@ Nothing here can send email: sending is OFF and test drafts can never be sent.
 3. Click **Execute workflow** once to research ONE prospect (~$0.20–0.50). A summary arrives in Telegram.
 4. When you're happy with the quality, **Publish** it: it then runs hourly 8 AM–7 PM ET, one prospect per run,
    and stops automatically at the daily ($1.50) and monthly budgets.
+
+## E. Prospect sourcing (/prospect + weekly discovery)
+1. Supabase: run `dist/update_0011_prospect_sourcing.sql`.
+2. Replace the Telegram bot: in n8n, open **SCI – Telegram Bot** → ⋯ → **Archive** (or Delete) FIRST
+   (only one workflow can listen to the bot), then import the new `02_telegram_bot.json`.
+3. Replace research: archive **SCI – Sales: Research Prospects**, import the new `04_sales_research.json`.
+4. Import `05_weekly_discovery.json`.
+
+**Credentials (n8n may pick the wrong one automatically; check every database step):**
+
+| Workflow | Database steps use | Other steps |
+|---|---|---|
+| Telegram Bot | **SCI DB – Approver** | Telegram steps: SCI – Telegram Bot |
+| Research Prospects | **SCI DB – Sales** | Call Claude: SCI – Claude (Sales); Telegram: SCI – Telegram Bot |
+| Weekly Discovery | **SCI DB – Sales** | Call Claude: SCI – Claude (Sales); Telegram: SCI – Telegram Bot |
+
+Each: ⋯ → Settings → Error workflow = **SCI – Error Alerts**, then Publish.
