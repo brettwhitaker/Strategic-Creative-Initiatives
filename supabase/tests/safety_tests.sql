@@ -268,6 +268,17 @@ select sci.sales_apply_identity((select p.id from sci.prospects p join sci.organ
   '{"official_name":"New Biz Consulting LLC","official_website":"https://newbiz-test.com"}'::jsonb);
 select t.assert('official business name replaces a bare web address', exists (select 1 from sci.organizations where name = 'New Biz Consulting LLC'));
 
+-- ---- Discovery rotation: home every other run; away alternates Florida metros / Indianapolis ----
+update sci.discovery_segments set last_run_at = null;
+create temp table t_rot(n int, region text);
+do $x$ begin for i in 1..6 loop perform sci.sales_start_discovery();
+  insert into t_rot select i, region from sci.discovery_segments order by last_run_at desc nulls last limit 1; end loop; end $x$;
+select t.assert('rotation is home, Florida metro, home, Indianapolis, home, Florida metro',
+  (select string_agg(region, ',' order by n) = 'nefl,florida,nefl,indianapolis,nefl,florida' from t_rot));
+select t.assert('discovery v2 instructions are active (hiring first)',
+  (select version = 2 and system_text like '%hiring (strongest%' from sci.prompts where name = 'prospect_discovery' and is_active));
+select t.assert('geography scoring credits Indianapolis', (select content like '%Indianapolis area = 7%' from sci.business_knowledge where key = 'fit_rubric' and is_active));
+
 rollback;
 \echo
 \echo ALL SAFETY TESTS PASSED

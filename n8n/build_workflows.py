@@ -415,7 +415,7 @@ const request = {
   ],
   tool_choice: { type: 'auto' },
   messages: [{ role: 'user', content:
-    'Find prospect candidates.\nCategory: ' + ctx.segment.category + '\nArea: ' + ctx.segment.area + ', Florida\n\n' +
+    'Find prospect candidates.\nCategory: ' + ctx.segment.category + '\nArea: ' + ctx.segment.area + '\n\n' +
     '<exclude>\n' + (ctx.exclude || []).join('\n') + '\n</exclude>\n\nFinish by calling submit_candidates.' }],
 };
 return [{ json: { state: {
@@ -477,13 +477,13 @@ discovery = workflow("SCI – Sales: Weekly Prospect Discovery", [
      "alwaysOutputData": True},
     node("Prepare messages", "n8n-nodes-base.code", 2, {"jsCode": MESSAGES_JS}, [2880, 0]),
     if_node("Candidate card?", "={{ $json.kind }}", "equals", "card", [3120, 0], typ="string"),
-    tg_send("Send candidate card", OWNER_CHAT_ID, "={{ $json.text }}", [3360, -100], reply_markup={
+    tg_send("Send candidate card", OWNER_CHAT_ID, "={{ $json.text }}", [3360, 100], reply_markup={
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {"rows": [{"row": {"buttons": [
             {"text": "🔎 Research", "additionalFields": {"callback_data": "={{ 'dc:' + $json.candidate_id + ':research' }}"}},
             {"text": "⏭ Skip", "additionalFields": {"callback_data": "={{ 'dc:' + $json.candidate_id + ':skip' }}"}},
         ]}}]}}),
-    tg_send("Send summary", OWNER_CHAT_ID, "={{ $json.text }}", [3360, 100]),
+    tg_send("Send summary", OWNER_CHAT_ID, "={{ $json.text }}", [3360, -100]),
     pg("Record failure", "update sci.agent_runs set status = 'failed', error = left($2, 2000), finished_at = now() where id = $1::uuid",
        "={{ [ $json.ctx.run_id, $json.error ] }}", [2640, 200], "sales"),
     tg_send("Tell Brett it failed", OWNER_CHAT_ID,
