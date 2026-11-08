@@ -189,6 +189,43 @@ select t.assert('…and the draft is marked rejected',
 select t.assert('bot: pressing a button twice is harmless',
   sci.handle_telegram('decision','111111','00000000-0000-0000-0000-00000000f003','approved') like 'ℹ️%');
 
+-- ---- Sales research: start + save (run as the Sales agent's own login) ----
+create temp table t_ctx as select null::jsonb as ctx;
+grant all on t_ctx to agent_sales;
+set local role agent_sales;
+update t_ctx set ctx = sci.sales_start_research((select id from sci.tasks where dedupe_key = 'research:00000000-0000-0000-0000-0000000000d3'), 'exec-1');
+reset role;
+select t.assert('research start loads prospect, prompt and knowledge',
+  (select ctx->'prospect'->>'business_name' like 'Fleming Island%' and ctx->>'system_text' like '%submit_research%'
+          and ctx->'knowledge' ? 'fit_rubric' and ctx->>'model' = 'claude-opus-5-5' from t_ctx));
+set local role agent_sales;
+update t_ctx set ctx = ctx || jsonb_build_object('saved', sci.sales_save_research(
+  (ctx->>'run_id')::uuid, (ctx->>'task_id')::uuid,
+  '{"business_summary":"PT clinic.","industry":"Healthcare","size_estimate":"5-15 staff (inferred)",
+    "findings":[{"category":"website","statement":"Blog last updated 2023","status":"verified","source_url":"https://flemingpt.test/blog","evidence_quote":"Posted March 2023"},
+                {"category":"social","statement":"Instagram activity","status":"unknown","source_url":"","evidence_quote":""}],
+    "score_breakdown":{"gap":99,"trust_driven":8,"ability_to_invest":14,"growth":5,"geography":10,"reachability":3},
+    "top_opportunity":"Restart the blog","recommended_service":"Content retainer","secondary_service":"",
+    "disqualify_reason":"","public_contact":{"name":"","role":"","email":"info@flemingpt.test","source_url":"https://flemingpt.test/contact"}}'::jsonb,
+  '{"model":"claude-opus-5-5","input_tokens":40000,"output_tokens":3000,"web_searches":3}'::jsonb)) ;
+reset role;
+select t.assert('score is computed by the database with each part capped (gap 99 -> 40; total 80)',
+  (select (ctx->'saved'->>'score')::int = 80 and ctx->'saved'->>'stage' = 'qualified' from t_ctx));
+select t.assert('cost recorded ($0.22 tokens + $0.03 searches = $0.25)', (select (ctx->'saved'->>'cost')::numeric = 0.25 from t_ctx));
+select t.assert('qualified prospect gets exactly one outreach-draft task',
+  (select count(*) = 1 from sci.tasks where dedupe_key = 'draft_outreach:00000000-0000-0000-0000-0000000000d3'));
+select t.assert('research task marked done', (select status = 'done' from sci.tasks where dedupe_key = 'research:00000000-0000-0000-0000-0000000000d3'));
+select t.assert('summary for Telegram mentions score and evidence',
+  (select ctx->'saved'->>'summary' like '%80/100%QUALIFIED%1 verified · 0 inferred · 1 unknown%' from t_ctx));
+select t.assert('existing suppressed/contact data untouched; new public contact saved with its source',
+  (select count(*) = 1 from sci.contacts where email = 'info@flemingpt.test' and source = 'https://flemingpt.test/contact'));
+select t.expect_error('a run cannot be saved twice',
+  $$select sci.sales_save_research((select (ctx->>'run_id')::uuid from t_ctx), (select (ctx->>'task_id')::uuid from t_ctx), '{}'::jsonb, '{}'::jsonb)$$, 'agent_sales');
+update t_ctx set ctx = sci.sales_start_research((select id from sci.tasks where dedupe_key = 'research:00000000-0000-0000-0000-0000000000d1'));
+select t.expect_error('Sales research cannot save a fabricated "verified" finding (no quote)',
+  $$select sci.sales_save_research((select (ctx->>'run_id')::uuid from t_ctx), (select (ctx->>'task_id')::uuid from t_ctx),
+     '{"findings":[{"category":"x","statement":"Has 50 employees","status":"verified","source_url":"https://a.test","evidence_quote":""}]}'::jsonb, '{}'::jsonb)$$, 'agent_sales');
+
 rollback;
 \echo
 \echo ALL SAFETY TESTS PASSED
