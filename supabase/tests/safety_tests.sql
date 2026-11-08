@@ -226,6 +226,48 @@ select t.expect_error('Sales research cannot save a fabricated "verified" findin
   $$select sci.sales_save_research((select (ctx->>'run_id')::uuid from t_ctx), (select (ctx->>'task_id')::uuid from t_ctx),
      '{"findings":[{"category":"x","statement":"Has 50 employees","status":"verified","source_url":"https://a.test","evidence_quote":""}]}'::jsonb, '{}'::jsonb)$$, 'agent_sales');
 
+-- ---- Prospect sourcing: /prospect and weekly discovery ----
+select t.assert('domain helper normalizes web addresses',
+  sci.domain_of('https://www.Example.com/about?x=1') = 'example.com' and sci.domain_of('example.com') = 'example.com');
+select t.expect_ok('bot: /prospect adds a business by name', $$select sci.handle_telegram('prospect','111111',null,null,'Bartram Trail Dental St Johns')$$, 'sci_approver');
+select t.assert('…creating org, prospect and a priority research task',
+  (select count(*) = 1 from sci.tasks t join sci.prospects p on p.id = t.related_id join sci.organizations o on o.id = p.organization_id
+    where o.name = 'Bartram Trail Dental St Johns' and t.type = 'research_prospect' and t.priority = 1 and t.status = 'queued'));
+select t.assert('bot: adding the same business again is refused politely',
+  sci.handle_telegram('prospect','111111',null,null,'bartram trail dental st johns') like 'ℹ️%already in the system%');
+select t.assert('bot: /prospect with a website works', sci.handle_telegram('prospect','111111',null,null,'www.newbiz-test.com/home') like '✅ Added newbiz-test.com%');
+insert into sci.suppression_list(domain, reason) values ('blockedbiz.test','do_not_contact');
+select t.assert('bot: do-not-contact domains are refused', sci.handle_telegram('prospect','111111',null,null,'https://blockedbiz.test') like '⛔%');
+select t.assert('bot: strangers cannot add prospects', sci.handle_telegram('prospect','999999',null,null,'Evil Corp') is null
+  and not exists (select 1 from sci.organizations where name = 'Evil Corp'));
+select t.assert('bot: /prospect with nothing after it explains how', sci.handle_telegram('prospect','111111',null,null,'') like 'Please include%');
+
+update t_ctx set ctx = sci.sales_start_discovery('exec-d');
+select t.assert('discovery start picks a segment and passes the exclude list',
+  (select ctx->'segment'->>'category' is not null and jsonb_array_length(ctx->'exclude') > 5 and ctx->>'system_text' like '%submit_candidates%' from t_ctx));
+create temp table t_cards as select * from sci.sales_save_discovery((select (ctx->>'run_id')::uuid from t_ctx),
+  '{"candidates":[
+     {"name":"Ancient City Accounting","website":"https://ancientcityacct.test","city":"St. Augustine","signal_type":"hiring","signal":"Hiring a marketing coordinator","signal_status":"verified","source_url":"https://jobs.test/1","evidence_quote":"Marketing Coordinator wanted"},
+     {"name":"Bartram Trail Dental St Johns","website":"","city":"","signal_type":"other","signal":"dup of existing","signal_status":"inferred","source_url":"","evidence_quote":""},
+     {"name":"Blocked Biz Again","website":"https://www.blockedbiz.test/about","city":"","signal_type":"other","signal":"suppressed domain","signal_status":"inferred","source_url":"","evidence_quote":""},
+     {"name":"Palm Valley PT","website":"palmvalleypt.test","city":"Ponte Vedra","signal_type":"stale_content","signal":"Blog quiet since 2022","signal_status":"inferred","source_url":"","evidence_quote":""}]}'::jsonb,
+  '{"input_tokens":30000,"output_tokens":2000,"web_searches":4}'::jsonb);
+select t.assert('discovery keeps only NEW, contactable candidates (2 of 4)', (select count(*) = 2 from t_cards));
+select t.assert('candidate card shows signal and source', (select card like '%Hiring signal (verified): Hiring a marketing coordinator%Source: https://jobs.test/1%' from t_cards where card like '%Ancient%'));
+select t.expect_error('discovery cannot save an unsourced "verified" signal',
+  $$insert into sci.prospect_candidates(name, signal_type, signal, signal_status) values ('X','hiring','y','verified')$$);
+select t.assert('bot: Research button turns a candidate into a queued prospect',
+  sci.handle_telegram('candidate','111111',(select candidate_id from t_cards where card like '%Ancient%'),'research') like '✅ Added Ancient City Accounting%');
+select t.assert('…and saved its website', exists (select 1 from sci.organizations where domain = 'ancientcityacct.test'));
+select t.assert('bot: Skip button skips; pressing again is harmless',
+  sci.handle_telegram('candidate','111111',(select candidate_id from t_cards where card like '%Palm%'),'skip') like '⏭%');
+select t.assert('…pressing a button again is harmless', sci.handle_telegram('candidate','111111',(select candidate_id from t_cards where card like '%Palm%'),'research') like 'ℹ️ Already handled%');
+
+-- Research fills in the official name/website when the prospect was added by web address
+select sci.sales_apply_identity((select p.id from sci.prospects p join sci.organizations o on o.id=p.organization_id where o.name='newbiz-test.com'),
+  '{"official_name":"New Biz Consulting LLC","official_website":"https://newbiz-test.com"}'::jsonb);
+select t.assert('official business name replaces a bare web address', exists (select 1 from sci.organizations where name = 'New Biz Consulting LLC'));
+
 rollback;
 \echo
 \echo ALL SAFETY TESTS PASSED
