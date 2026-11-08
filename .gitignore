@@ -2,3 +2,4 @@
 *.local
 scratch*
 dist/local_*.sql
+sites/out/

@@ -1,0 +1,45 @@
+{
+  "_note": "FICTIONAL demo business for showing the template. Not a real company.",
+  "business_name": "Saltmarsh Pool Care (Demo)",
+  "slug": "demo-saltmarsh-pools",
+  "tagline": "Clear water. Zero hassle.",
+  "eyebrow": "Pool cleaning & repair · St. Johns County",
+  "headline": "Spend your weekends in the pool, not cleaning it.",
+  "intro": "Weekly pool service, repairs and green-to-clean rescues for homeowners in St. Augustine and Ponte Vedra. One local team, one simple monthly price.",
+  "cta_text": "Get a free quote",
+  "colors": { "primary": "#0e7c86", "accent": "#f2a541", "background": "#fbfcfc" },
+  "font": "friendly",
+  "services": {
+    "eyebrow": "Services", "title": "Everything your pool needs",
+    "intro": "Pick a weekly plan or call us when something breaks.",
+    "items": [
+      { "name": "Weekly cleaning", "description": "Skimming, brushing, vacuuming, chemicals and a quick equipment check every week.", "price": "from $45 / visit" },
+      { "name": "Green-to-clean rescue", "description": "Algae takeover? We bring it back to swimmable, usually within a few days." },
+      { "name": "Pump & filter repair", "description": "Diagnosis and repair of pumps, filters and heaters, with parts explained before we start." }
+    ],
+    "note": "Prices depend on pool size and condition. Quotes are always free."
+  },
+  "highlights": {
+    "title": "Why neighbors choose us",
+    "items": [
+      { "title": "Same tech every week", "text": "You'll know who's in your backyard, and they'll know your pool." },
+      { "title": "Photo report after every visit", "text": "A quick text with what we did and anything we noticed." },
+      { "title": "No long contracts", "text": "Month-to-month service. Stay because you're happy." }
+    ]
+  },
+  "about": {
+    "title": "A small team that shows up",
+    "text": ["This is placeholder text for the demo. A real client's story goes here, written by Brett from an interview with the owner.",
+             "Two or three short paragraphs work best: who they are, why they started, and what customers can count on."]
+  },
+  "faq": { "items": [
+    { "q": "Do I need to be home?", "a": "No. Just make sure the gate is unlocked and pets are inside." },
+    { "q": "What areas do you serve?", "a": "St. Augustine, St. Augustine Beach, Ponte Vedra and Nocatee." }
+  ]},
+  "contact": {
+    "title": "Ready for a clean pool?", "intro": "Text or call for a free quote. We usually reply the same day.",
+    "phone": "904-555-0142", "email": "hello@example.com",
+    "service_area": "St. Augustine, Ponte Vedra and Nocatee",
+    "hours": ["Mon–Fri 8 AM–5 PM", "Sat 9 AM–12 PM"]
+  }
+}
