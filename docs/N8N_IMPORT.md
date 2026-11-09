@@ -58,3 +58,13 @@ Each: ⋯ → Settings → Error workflow = **SCI – Error Alerts**, then Publi
    Error workflow → SCI – Error Alerts. Publish. It drafts one email per hour (8 AM–7 PM ET) for qualified prospects.
 3. Each draft arrives in Telegram with ✅ Approve / ❌ Reject. Approving marks it ready; sending stays OFF.
 
+
+## G. Social Media Manager (Phase 4)
+1. Supabase: run `dist/update_0019_social_agent.sql`, then `dist/client_ideal_move.sql` (client profile + schedule).
+2. Supabase: `alter role agent_social login password 'LONG_RANDOM_PASSWORD';`
+3. n8n: new Postgres credential **SCI DB – Social** (user `agent_social.<project-ref>`, same host/port/SSL settings
+   as the others, Ignore SSL Issues on, max connections 5).
+4. n8n: import `08_social_content_planner.json`. Database steps → **SCI DB – Social**; Call Claude →
+   **SCI – Claude (Sales)**. Error workflow → SCI – Error Alerts. Publish.
+Plans are drafted Thursdays for the following week (Tue FB+IG, Wed LinkedIn, Fri FB+IG by default).
+Nothing is ever published automatically; approved posts are copied into Meta Business Suite / LinkedIn by hand.

@@ -9,6 +9,7 @@ cat > "$WORK/creds.json" <<'EOF'
 [
  {"id":"credAppr","name":"SCI DB – Approver","type":"postgres","data":{"host":"127.0.0.1","port":55440,"database":"postgres","user":"sci_approver","password":"testpw","ssl":"disable","maxConnections":5}},
  {"id":"credSales","name":"SCI DB – Sales","type":"postgres","data":{"host":"127.0.0.1","port":55440,"database":"postgres","user":"agent_sales","password":"testpw","ssl":"disable","maxConnections":5}},
+ {"id":"credSocial","name":"SCI DB – Social","type":"postgres","data":{"host":"127.0.0.1","port":55440,"database":"postgres","user":"agent_social","password":"testpw","ssl":"disable","maxConnections":5}},
  {"id":"credTg","name":"SCI – Telegram Bot","type":"telegramApi","data":{"accessToken":"0:dummy"}}
 ]
 EOF
@@ -89,4 +90,18 @@ grep -q "not provided" "$WORK/drafts.out" && echo "PASS card flags a cited findi
 grep -q "rd:$AP" "$WORK/drafts.out" && echo "PASS card carries the Redraft button" || { echo "FAIL redraft button"; exit 1; }
 check "running again with nothing queued creates no duplicate" "select count(*)=1 from sci.outbound_actions where idempotency_key like 'outreach:%:step1:email'"
 
+
+echo "== 8. Social content planner workflow"
+"${PSQL[@]}" -c "alter role agent_social login password 'testpw'" >/dev/null
+"${PSQL[@]}" -c "select sci.set_social_schedule('TEST Client — Harbor Coffee Co.', '[{\"dow\":2,\"platforms\":[\"facebook\",\"instagram\"]},{\"dow\":3,\"platforms\":[\"linkedin\"]},{\"dow\":5,\"platforms\":[\"facebook\",\"instagram\"]}]'::jsonb, 4)" >/dev/null
+"$N8N" import:workflow --input="$WORK/08_social_content_planner.json" >/dev/null 2>&1
+"$N8N" execute --id=testSocial --rawOutput > "$WORK/social.out" 2>&1 || { cat "$WORK/social.out"; exit 1; }
+cp "$WORK/social.out" /tmp/ 2>/dev/null || true
+check "3 post drafts saved for approval (as the Social login)" "select count(*)=3 from sci.outbound_actions where created_by='social' and status='pending_approval'"
+grep -q "Next week's posts for TEST Client" "$WORK/social.out" && echo "PASS weekly summary sent" || { echo "FAIL social header"; exit 1; }
+SA=$("${PSQL[@]}" -c "select a.id from sci.approvals a join sci.outbound_actions o on o.id=a.subject_id where o.created_by='social' limit 1")
+grep -q "rd:$SA" "$WORK/social.out" && echo "PASS post cards carry Approve/Reject/Redraft" || { echo "FAIL social buttons"; exit 1; }
+grep -q "mentions a price" "$WORK/social.out" && echo "PASS a post with a price is flagged for review" || { echo "FAIL price flag"; exit 1; }
+"$N8N" execute --id=testSocial --rawOutput > "$WORK/social2.out" 2>&1 || true
+check "running again before next week drafts nothing new" "select count(*)=3 from sci.outbound_actions where created_by='social'"
 echo "ALL N8N WORKFLOW TESTS PASSED"

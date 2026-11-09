@@ -10,7 +10,7 @@ import json, pathlib, sys, copy
 ROOT = pathlib.Path(__file__).resolve().parents[1] / "workflows"
 out, approval_id = pathlib.Path(sys.argv[1]), sys.argv[2]
 out.mkdir(parents=True, exist_ok=True)
-CRED_IDS = {"SCI DB – Approver": "credAppr", "SCI DB – Sales": "credSales", "SCI – Telegram Bot": "credTg", "SCI – Claude (Sales)": "credClaude"}
+CRED_IDS = {"SCI DB – Approver": "credAppr", "SCI DB – Sales": "credSales", "SCI – Telegram Bot": "credTg", "SCI – Claude (Sales)": "credClaude", "SCI DB – Social": "credSocial"}
 
 def fix_creds(n):
     for v in n.get("credentials", {}).values():
@@ -36,6 +36,17 @@ def telegram_to_set(n):
 MOCK_CLAUDE = r"""
 const st = $json.state;
 if (!st.request || !st.request.model || !Array.isArray(st.request.tools)) throw new Error('bad request built');
+if (st.request.tools.some(t => t.name === 'submit_posts')) {
+  const um = st.request.messages[0].content;
+  if (!um.includes('MODE: PLAN') || !um.includes('<slots>')) throw new Error('plan request malformed');
+  if (!st.request.system[1].text.includes('CLIENT KNOWLEDGE')) throw new Error('client knowledge missing');
+  const post = (i, pillar) => ({ slot_index: i, pillar, hook: 'Hook ' + i, caption: 'Caption for slot ' + i + ' with enough words to count as a real post.',
+    hashtags: '#test', creative_brief: 'A photo', note_for_brett: 'Note ' + i });
+  const posts = [post(0, 'Feeling at home'), post(1, 'Explaining'), post(2, 'Tips')];
+  posts[2].caption = 'A post that slips in a price of $500 and should be flagged for review by Brett.';
+  return [{ json: { stop_reason: 'tool_use', usage: { input_tokens: 9000, output_tokens: 2500 },
+    content: [{ type: 'tool_use', id: 't5', name: 'submit_posts', input: { posts } }] } }];
+}
 if (st.request.tools.some(t => t.name === 'submit_draft')) {
   const um = st.request.messages[0].content;
   if (!um.includes('<verified_findings>')) throw new Error('findings missing');
@@ -103,6 +114,9 @@ def variant(fname, wf_id, fake_updates=None):
     if fname.startswith("04"):
         wf["nodes"] = [n for n in wf["nodes"] if n["type"] != "n8n-nodes-base.scheduleTrigger"]
         wf["connections"].pop("Hourly 8 AM–7 PM ET", None)
+    if fname.startswith("08"):
+        wf["nodes"] = [n for n in wf["nodes"] if n["type"] != "n8n-nodes-base.scheduleTrigger"]
+        wf["connections"].pop("Hourly 8 AM–7 PM ET", None)
     if fname.startswith("06"):
         wf["nodes"] = [n for n in wf["nodes"] if n["type"] != "n8n-nodes-base.scheduleTrigger"]
         wf["connections"].pop("Hourly 8 AM–7 PM ET", None)
@@ -132,4 +146,5 @@ variant("01_error_alerts.json", "testErr")
 variant("04_sales_research.json", "testResearch")
 variant("05_weekly_discovery.json", "testDiscovery")
 variant("06_outreach_drafts.json", "testDrafts")
+variant("08_social_content_planner.json", "testSocial")
 print("ok")

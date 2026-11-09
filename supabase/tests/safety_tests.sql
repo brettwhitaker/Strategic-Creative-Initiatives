@@ -364,6 +364,64 @@ select t.assert('…pressing again is harmless', sci.handle_telegram('helpwanted
 select t.assert('strangers cannot mark posts', sci.handle_telegram('helpwanted','999999',(select post_id from t_hw),'skip') is null);
 select t.assert('next scan knows which posts it already found', (select sci.sales_start_helpwanted()->'known_urls' ? 'https://www.reddit.com/r/jacksonville/comments/abc/need_help_with_website/'));
 
+-- ---- Social Media Manager ----
+grant all on t_ctx to agent_social;
+select sci.set_social_schedule('TEST Client — Harbor Coffee Co.',
+  '[{"dow":2,"platforms":["facebook","instagram"]},{"dow":3,"platforms":["linkedin"]},{"dow":5,"platforms":["facebook","instagram"]}]'::jsonb, 4);
+set local role agent_social;
+update t_ctx set ctx = sci.social_next_job('exec-s');
+reset role;
+select t.assert('weekly plan job: 3 slots starting next Monday, with the client''s own knowledge only',
+  (select ctx->>'mode' = 'plan' and jsonb_array_length(ctx->'slots') = 3
+      and (ctx->'slots'->0->>'date')::date = (now() at time zone 'America/New_York')::date + (8 - extract(isodow from (now() at time zone 'America/New_York')::date)::int) + 1
+      and ctx->'knowledge'->>'voice' like '%playful%' and ctx->'client'->>'name' like 'TEST Client%' from t_ctx));
+select t.expect_error('Social agent still cannot read client tables directly', $$select * from sci.clients$$, 'agent_social');
+set local role agent_social;
+create temp table t_posts as select * from sci.social_save_posts((select (ctx->>'run_id')::uuid from t_ctx),
+  '{"posts":[
+     {"slot_index":0,"pillar":"Behind the scenes","hook":"Meet the beans.","caption":"Meet the beans. ☕ Our new roast lands Tuesday.","hashtags":"#coffee #jax","creative_brief":"Close-up of beans","note_for_brett":"Needs a real photo."},
+     {"slot_index":1,"pillar":"Community","hook":"Local partners","caption":"We love our local partners.","hashtags":"","creative_brief":"Team photo","note_for_brett":"Confirm partner names."},
+     {"slot_index":2,"pillar":"Tips","hook":"Brew better","caption":"Three ways to brew better at home.","hashtags":"#coffeetips","creative_brief":"Carousel","note_for_brett":"-"},
+     {"slot_index":9,"pillar":"x","hook":"x","caption":"out of range slot","hashtags":"","creative_brief":"","note_for_brett":""}]}'::jsonb,
+  '{"input_tokens":8000,"output_tokens":3000}'::jsonb);
+reset role;
+select t.assert('3 post drafts saved (invalid slot ignored), each waiting for approval', (select count(*) = 3 from t_posts)
+  and (select count(*) = 3 from sci.outbound_actions where created_by = 'social' and status = 'pending_approval'));
+select t.assert('LinkedIn slot saved as a LinkedIn post; others as Facebook+Instagram',
+  exists (select 1 from sci.outbound_actions where created_by = 'social' and channel = 'linkedin_post')
+  and exists (select 1 from sci.outbound_actions where created_by = 'social' and channel = 'facebook_post' and payload->'platforms' ? 'instagram'));
+select t.assert('post card shows platforms, date, caption, visual brief and says nothing is auto-published',
+  (select bool_and(card like '%📣 TEST Client%' and card like '%🎨 Visual:%' and card like '%Nothing is published automatically.%' and card like '%Ref D-%') from t_posts));
+select t.assert('weekly header summarizes the plan', (select bool_and(header like '%Next week''s posts for TEST Client%3 draft(s)%') from t_posts));
+select t.assert('cost recorded under the social agent', exists (select 1 from sci.llm_usage where agent = 'social'));
+select t.assert('next plan is scheduled for next week (not immediately again)',
+  (select next_plan_at > now() + interval '3 days' from sci.client_social_settings s join sci.clients c on c.id = s.client_id where c.name like 'TEST Client%'));
+set local role agent_social;
+update t_ctx set ctx = sci.social_next_job();
+reset role;
+select t.assert('no plan due now -> nothing to do', (select (ctx->>'none')::boolean from t_ctx));
+select t.expect_error('social posts can never be published while publishing is OFF (and test client rows never)',
+  $$update sci.outbound_actions set status = 'sending' where created_by = 'social'$$);
+
+-- Redraft a post with notes from Telegram
+select t.assert('bot: reply-with-notes on a post card queues a new version',
+  sci.handle_telegram('redraft_note','111111',null,(select left(approval_id::text, 8) from t_posts limit 1),'More playful, mention the patio') like '✏️ Got it. A new version of this post%');
+set local role agent_social;
+update t_ctx set ctx = sci.social_next_job('exec-s2');
+reset role;
+select t.assert('redraft job carries the notes and the previous post',
+  (select ctx->>'mode' = 'redraft' and ctx->>'owner_notes' = 'More playful, mention the patio' and ctx->'previous_post'->>'caption' like 'Meet the beans%' from t_ctx));
+set local role agent_social;
+create temp table t_posts2 as select * from sci.social_save_posts((select (ctx->>'run_id')::uuid from t_ctx),
+  '{"posts":[{"slot_index":0,"pillar":"Behind the scenes","hook":"Patio season!","caption":"Patio season is here. ☀️","hashtags":"#jax","creative_brief":"Patio shot","note_for_brett":"Playful per notes."}]}'::jsonb,
+  '{"input_tokens":5000,"output_tokens":800}'::jsonb);
+reset role;
+select t.assert('new version saved with its own key and labeled', (select bool_and(card like '%(new version)%') from t_posts2)
+  and exists (select 1 from sci.outbound_actions where idempotency_key like 'social:%:v2' and status = 'pending_approval'));
+select t.assert('old version is marked rejected', exists (select 1 from sci.content_items where draft like 'Meet the beans%' and status = 'rejected'));
+select t.assert('email redraft still works after the change',
+  (select sci.request_redraft(gen_random_uuid(), '111111') = 'Draft not found.'));
+
 rollback;
 \echo
 \echo ALL SAFETY TESTS PASSED

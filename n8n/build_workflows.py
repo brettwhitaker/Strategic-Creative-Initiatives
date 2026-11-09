@@ -13,6 +13,7 @@ OWNER_CHAT_ID = "8995080526"   # Brett's Telegram ID (not a secret)
 CRED = {
     "approver": {"postgres": {"id": "", "name": "SCI DB – Approver"}},
     "sales":    {"postgres": {"id": "", "name": "SCI DB – Sales"}},
+    "social":   {"postgres": {"id": "", "name": "SCI DB – Social"}},
     "telegram": {"telegramApi": {"id": "", "name": "SCI – Telegram Bot"}},
 }
 
@@ -637,12 +638,147 @@ drafts = workflow("SCI – Sales: Outreach Drafts", [
         ("Record failure", "Tell Brett it failed")))
 drafts["settings"]["timezone"] = "America/New_York"
 
+# ---------------------------------------------------------------- 8. Social Media Manager: weekly content plans
+SOCIAL_TOOL = {
+    "name": "submit_posts",
+    "description": "Submit the drafted posts. Call exactly once.",
+    "strict": True,
+    "input_schema": {"type": "object", "additionalProperties": False, "required": ["posts"],
+        "properties": {"posts": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False,
+            "required": ["slot_index", "pillar", "hook", "caption", "hashtags", "creative_brief", "note_for_brett"],
+            "properties": {
+                "slot_index": {"type": "integer", "description": "0-based index of the posting slot (0 for a redraft)"},
+                "pillar": {"type": "string"},
+                "hook": {"type": "string", "description": "The first line of the post"},
+                "caption": {"type": "string", "description": "Full post text WITHOUT hashtags"},
+                "hashtags": {"type": "string", "description": "Space-separated; may be empty"},
+                "creative_brief": {"type": "string", "description": "What image/video to use, 1-2 practical sentences"},
+                "note_for_brett": {"type": "string", "description": "Why this post; anything to check or supply"}}}}}}}
+
+BUILD_SOCIAL_JS = r"""
+const ctx = $json.ctx;
+const k = ctx.knowledge || {};
+const order = ['brand_guide', 'voice', 'offers', 'audience', 'content_pillars', 'strategy', 'do_not_say', 'faq', 'other'];
+const knowledge = order.filter(x => k[x]).map(x => '## ' + x.toUpperCase().replace('_', ' ') + '\n' + String(k[x]).trim()).join('\n\n');
+const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const slots = (ctx.slots || []).map((sl, i) => {
+  const d = new Date(sl.date + 'T12:00:00Z');
+  return i + ': ' + days[d.getUTCDay()] + ' ' + sl.date + ' on ' + (sl.platforms || []).join(' + ');
+}).join('\n');
+let task = ctx.mode === 'plan'
+  ? 'MODE: PLAN. Write one post for each slot below, in order.\n\n<slots>\n' + slots + '\n</slots>\n\n<recent_posts>\n' +
+    JSON.stringify(ctx.recent_posts || [], null, 1) + '\n</recent_posts>'
+  : 'MODE: REDRAFT. Rewrite this one post (slot_index 0).\n\n<slot>\n' + slots + '\n</slot>\n\n<previous_post>\n' +
+    JSON.stringify(ctx.previous_post || {}, null, 1) + '\n</previous_post>' +
+    (ctx.owner_notes ? '\n\n<owner_notes>\n' + ctx.owner_notes + '\n</owner_notes>' : '');
+const request = {
+  model: ctx.model, max_tokens: 12000,
+  thinking: { type: 'adaptive' }, output_config: { effort: ctx.effort }, fallbacks: 'default',
+  system: [
+    { type: 'text', text: String(ctx.system_text).trim() },
+    { type: 'text', text: 'CLIENT: ' + ctx.client.name + '\n\nCLIENT KNOWLEDGE\n\n' + knowledge, cache_control: { type: 'ephemeral' } },
+  ],
+  tools: [SOCIAL_TOOL_JSON],
+  tool_choice: { type: 'auto' },
+  messages: [{ role: 'user', content: task + '\n\nFinish by calling submit_posts.' }],
+};
+return [{ json: { state: {
+  ctx: { run_id: ctx.run_id, mode: ctx.mode, client: ctx.client.name, slot_count: (ctx.slots || []).length },
+  request, iter: 0, retrieved: [],
+  usage: { model: ctx.model, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, web_searches: 0 },
+} } }];
+""".strip().replace("SOCIAL_TOOL_JSON", json.dumps(SOCIAL_TOOL))
+
+CHECK_SOCIAL_JS = r"""
+const st = $json.state;
+const call = st.final_content.find(b => b.type === 'tool_use' && b.name === 'submit_posts');
+if (!call) return [{ json: { ok: false, ctx: st.ctx, usage: st.usage,
+  error: 'The social agent finished without posts (stop reason: ' + st.stop_reason + ')' } }];
+const r = typeof call.input === 'string' ? JSON.parse(call.input) : call.input;
+const posts = (r.posts || []).filter(p => p && String(p.caption || '').trim().length > 20);
+if (!posts.length) return [{ json: { ok: false, ctx: st.ctx, usage: st.usage, error: 'No usable posts were returned' } }];
+// Flag anything that looks like an invented testimonial or a price for Brett's attention.
+posts.forEach(p => {
+  const flags = [];
+  if (/\$\s?\d/.test(p.caption)) flags.push('mentions a price');
+  if (/["“][^"”]{20,}["”]\s*[-–—]\s*\w/.test(p.caption)) flags.push('looks like a quote/testimonial: make sure it is real and approved');
+  if (flags.length) p.note_for_brett = (p.note_for_brett || '') + ' ⚠️ Check: ' + flags.join('; ') + '.';
+});
+return [{ json: { ok: true, result: { posts }, ctx: st.ctx, usage: st.usage } }];
+""".strip()
+
+SOCIAL_MESSAGES_JS = r"""
+const rows = $input.all().map(i => i.json).filter(r => r.approval_id);
+if (!rows.length) return [];
+const out = [];
+if (rows[0].header) out.push({ json: { kind: 'header', text: rows[0].header } });
+rows.forEach(r => out.push({ json: { kind: 'card', text: r.card, approval_id: r.approval_id } }));
+return out;
+""".strip()
+
+social = workflow("SCI – Social: Content Planner", [
+    node("Run now (manual)", "n8n-nodes-base.manualTrigger", 1, {}, [0, -100]),
+    node("Hourly 8 AM–7 PM ET", "n8n-nodes-base.scheduleTrigger", 1.2,
+         {"rule": {"interval": [{"field": "cronExpression", "expression": "10 8-19 * * *"}]}}, [0, 100]),
+    pg("Safety check (pause + budget)", "select ok, reason from sci.guard_check('social', 0.30)", None, [240, 0], "social"),
+    if_node("OK to run?", "={{ $json.ok }}", "true", "", [480, 0]),
+    pg("Next job (plan or redraft)", "select sci.social_next_job($1) as ctx", "={{ [ String($execution.id) ] }}", [720, 0], "social"),
+    if_node("Anything to do?", "={{ $json.ctx.none === true }}", "false", "", [960, 0]),
+    node("Build Claude request", "n8n-nodes-base.code", 2, {"jsCode": BUILD_SOCIAL_JS}, [1200, 0]),
+    node("Prepare Claude call", "n8n-nodes-base.code", 2, {"jsCode": "return $input.all();"}, [1440, 0]),
+    {**CLAUDE_CALL, "position": [1680, 0]},
+    node("Collect results", "n8n-nodes-base.code", 2, {"jsCode": AFTER_CALL_JS}, [1920, 0]),
+    if_node("Claude paused? Continue", "={{ $json.again }}", "true", "", [2160, 0]),
+    node("Check the posts", "n8n-nodes-base.code", 2, {"jsCode": CHECK_SOCIAL_JS}, [2400, 100]),
+    if_node("Got posts?", "={{ $json.ok }}", "true", "", [2640, 100]),
+    pg("Save posts + approvals", "select * from sci.social_save_posts($1::uuid, $2::jsonb, $3::jsonb)",
+       "={{ [ $json.ctx.run_id, JSON.stringify($json.result), JSON.stringify($json.usage) ] }}", [2880, 0], "social"),
+    node("Prepare messages", "n8n-nodes-base.code", 2, {"jsCode": SOCIAL_MESSAGES_JS}, [3120, 0]),
+    if_node("Post card?", "={{ $json.kind }}", "equals", "card", [3360, 0], typ="string"),
+    tg_send("Send summary", OWNER_CHAT_ID, "={{ $json.text }}", [3600, -100]),
+    tg_send("Send post card", OWNER_CHAT_ID, "={{ $json.text }}", [3600, 100], reply_markup={
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {"rows": [{"row": {"buttons": [
+            {"text": "✅ Approve", "additionalFields": {"callback_data": "={{ 'ap:' + $json.approval_id + ':approved' }}"}},
+            {"text": "❌ Reject", "additionalFields": {"callback_data": "={{ 'ap:' + $json.approval_id + ':rejected' }}"}},
+        ]}}, {"row": {"buttons": [
+            {"text": "✏️ Redraft", "additionalFields": {"callback_data": "={{ 'rd:' + $json.approval_id }}"}},
+        ]}}]}}),
+    pg("Record failure", "select sci.social_fail($1::uuid, $2, $3::jsonb)",
+       "={{ [ $json.ctx.run_id, $json.error, JSON.stringify($json.usage) ] }}", [2880, 200], "social"),
+    tg_send("Tell Brett it failed", OWNER_CHAT_ID,
+            "={{ '⚠️ Social posts failed for ' + $('Check the posts').item.json.ctx.client + '\\n' + $('Check the posts').item.json.error + '\\nIt will be retried automatically.' }}",
+            [3120, 200]),
+], link(("Run now (manual)", "Safety check (pause + budget)"),
+        ("Hourly 8 AM–7 PM ET", "Safety check (pause + budget)"),
+        ("Safety check (pause + budget)", "OK to run?"),
+        ("OK to run?", "Next job (plan or redraft)"),
+        ("Next job (plan or redraft)", "Anything to do?"),
+        ("Anything to do?", "Build Claude request", 0),
+        ("Build Claude request", "Prepare Claude call"),
+        ("Prepare Claude call", "Call Claude"),
+        ("Call Claude", "Collect results"),
+        ("Collect results", "Claude paused? Continue"),
+        ("Claude paused? Continue", "Prepare Claude call", 0),
+        ("Claude paused? Continue", "Check the posts", 1),
+        ("Check the posts", "Got posts?"),
+        ("Got posts?", "Save posts + approvals", 0),
+        ("Got posts?", "Record failure", 1),
+        ("Save posts + approvals", "Prepare messages"),
+        ("Prepare messages", "Post card?"),
+        ("Post card?", "Send post card", 0),
+        ("Post card?", "Send summary", 1),
+        ("Record failure", "Tell Brett it failed")))
+social["settings"]["timezone"] = "America/New_York"
+
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
     for fname, wf in [("01_error_alerts.json", error_alerts), ("02_telegram_bot.json", telegram_bot),
                       ("03_test_approval_card.json", test_card),
                       ("04_sales_research.json", research),
                       ("05_weekly_discovery.json", discovery),
-                      ("06_outreach_drafts.json", drafts)]:
+                      ("06_outreach_drafts.json", drafts),
+                      ("08_social_content_planner.json", social)]:
         (OUT / fname).write_text(json.dumps(wf, indent=2, ensure_ascii=False))
         print("wrote", OUT / fname)

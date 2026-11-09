@@ -1,0 +1,727 @@
+{
+  "name": "SCI – Social: Content Planner",
+  "nodes": [
+    {
+      "id": "2710f622-b7ad-5c58-bdb3-025bcc1be062",
+      "name": "Run now (manual)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -100
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "8a9b5140-96e8-50f5-88e7-2c43782680db",
+      "name": "Hourly 8 AM–7 PM ET",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        100
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "10 8-19 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "b30c62a1-0737-5aa9-b099-efb9658afbe8",
+      "name": "Safety check (pause + budget)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select ok, reason from sci.guard_check('social', 0.30)",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "SCI DB – Social"
+        }
+      }
+    },
+    {
+      "id": "a590b2fe-1942-5d96-bb2d-5aa0b05453c8",
+      "name": "OK to run?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "OK to run?",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "ffc9ec60-2371-5725-8b03-3abb4f3f5770",
+      "name": "Next job (plan or redraft)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select sci.social_next_job($1) as ctx",
+        "options": {
+          "queryReplacement": "={{ [ String($execution.id) ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "SCI DB – Social"
+        }
+      }
+    },
+    {
+      "id": "725581bd-04e4-53ed-8092-4971efc23713",
+      "name": "Anything to do?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        960,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "Anything to do?",
+              "leftValue": "={{ $json.ctx.none === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c40e7655-5a9e-5157-8ac9-f43f1b20de94",
+      "name": "Build Claude request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const ctx = $json.ctx;\nconst k = ctx.knowledge || {};\nconst order = ['brand_guide', 'voice', 'offers', 'audience', 'content_pillars', 'strategy', 'do_not_say', 'faq', 'other'];\nconst knowledge = order.filter(x => k[x]).map(x => '## ' + x.toUpperCase().replace('_', ' ') + '\\n' + String(k[x]).trim()).join('\\n\\n');\nconst days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];\nconst slots = (ctx.slots || []).map((sl, i) => {\n  const d = new Date(sl.date + 'T12:00:00Z');\n  return i + ': ' + days[d.getUTCDay()] + ' ' + sl.date + ' on ' + (sl.platforms || []).join(' + ');\n}).join('\\n');\nlet task = ctx.mode === 'plan'\n  ? 'MODE: PLAN. Write one post for each slot below, in order.\\n\\n<slots>\\n' + slots + '\\n</slots>\\n\\n<recent_posts>\\n' +\n    JSON.stringify(ctx.recent_posts || [], null, 1) + '\\n</recent_posts>'\n  : 'MODE: REDRAFT. Rewrite this one post (slot_index 0).\\n\\n<slot>\\n' + slots + '\\n</slot>\\n\\n<previous_post>\\n' +\n    JSON.stringify(ctx.previous_post || {}, null, 1) + '\\n</previous_post>' +\n    (ctx.owner_notes ? '\\n\\n<owner_notes>\\n' + ctx.owner_notes + '\\n</owner_notes>' : '');\nconst request = {\n  model: ctx.model, max_tokens: 12000,\n  thinking: { type: 'adaptive' }, output_config: { effort: ctx.effort }, fallbacks: 'default',\n  system: [\n    { type: 'text', text: String(ctx.system_text).trim() },\n    { type: 'text', text: 'CLIENT: ' + ctx.client.name + '\\n\\nCLIENT KNOWLEDGE\\n\\n' + knowledge, cache_control: { type: 'ephemeral' } },\n  ],\n  tools: [{\"name\": \"submit_posts\", \"description\": \"Submit the drafted posts. Call exactly once.\", \"strict\": true, \"input_schema\": {\"type\": \"object\", \"additionalProperties\": false, \"required\": [\"posts\"], \"properties\": {\"posts\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"additionalProperties\": false, \"required\": [\"slot_index\", \"pillar\", \"hook\", \"caption\", \"hashtags\", \"creative_brief\", \"note_for_brett\"], \"properties\": {\"slot_index\": {\"type\": \"integer\", \"description\": \"0-based index of the posting slot (0 for a redraft)\"}, \"pillar\": {\"type\": \"string\"}, \"hook\": {\"type\": \"string\", \"description\": \"The first line of the post\"}, \"caption\": {\"type\": \"string\", \"description\": \"Full post text WITHOUT hashtags\"}, \"hashtags\": {\"type\": \"string\", \"description\": \"Space-separated; may be empty\"}, \"creative_brief\": {\"type\": \"string\", \"description\": \"What image/video to use, 1-2 practical sentences\"}, \"note_for_brett\": {\"type\": \"string\", \"description\": \"Why this post; anything to check or supply\"}}}}}}}],\n  tool_choice: { type: 'auto' },\n  messages: [{ role: 'user', content: task + '\\n\\nFinish by calling submit_posts.' }],\n};\nreturn [{ json: { state: {\n  ctx: { run_id: ctx.run_id, mode: ctx.mode, client: ctx.client.name, slot_count: (ctx.slots || []).length },\n  request, iter: 0, retrieved: [],\n  usage: { model: ctx.model, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, web_searches: 0 },\n} } }];"
+      }
+    },
+    {
+      "id": "b8941e29-0956-5e82-9d3e-1ab0ebd2a952",
+      "name": "Prepare Claude call",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        0
+      ],
+      "parameters": {
+        "jsCode": "return $input.all();"
+      }
+    },
+    {
+      "id": "b81e8c7f-3765-5561-a57e-de52bb6412dc",
+      "name": "Call Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "anthropic-beta",
+              "value": "server-side-fallback-2026-07-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.state.request) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "credentials": {
+        "anthropicApi": {
+          "id": "",
+          "name": "SCI – Claude (Sales)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "b4238d5e-d692-5efc-b0b2-323969cb7025",
+      "name": "Collect results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Add up usage, remember which URLs were actually retrieved, and continue if Claude paused.\nconst st = JSON.parse(JSON.stringify($('Prepare Claude call').last().json.state));\nconst res = $json;\nconst u = res.usage || {};\nst.usage.input_tokens += u.input_tokens || 0;\nst.usage.output_tokens += u.output_tokens || 0;\nst.usage.cache_read_tokens += u.cache_read_input_tokens || 0;\nst.usage.cache_write_tokens += u.cache_creation_input_tokens || 0;\nst.usage.web_searches += (u.server_tool_use && u.server_tool_use.web_search_requests) || 0;\nconst walk = (v, inResult) => {\n  if (v == null) return;\n  if (typeof v === 'string') { if (inResult) for (const m of v.matchAll(/https?:\\/\\/[^\\s\"'<>)\\]]+/g)) st.retrieved.push(m[0]); return; }\n  if (Array.isArray(v)) { v.forEach(x => walk(x, inResult)); return; }\n  if (typeof v === 'object') {\n    const isRes = inResult || (typeof v.type === 'string' && v.type.endsWith('_tool_result'));\n    for (const val of Object.values(v)) walk(val, isRes);\n  }\n};\nwalk(res.content, false);\nst.iter += 1;\nst.stop_reason = res.stop_reason;\nif (res.stop_reason === 'pause_turn' && st.iter < 5) {\n  st.request.messages.push({ role: 'assistant', content: res.content });\n  return [{ json: { state: st, again: true } }];\n}\nst.final_content = res.content || [];\ndelete st.request;\nreturn [{ json: { state: st, again: false } }];"
+      }
+    },
+    {
+      "id": "bbf210f3-d962-5740-8917-57d6a7b35f3f",
+      "name": "Claude paused? Continue",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2160,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "Claude paused? Continue",
+              "leftValue": "={{ $json.again }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "2ac0186f-2e37-5db9-9601-abbda377851e",
+      "name": "Check the posts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        100
+      ],
+      "parameters": {
+        "jsCode": "const st = $json.state;\nconst call = st.final_content.find(b => b.type === 'tool_use' && b.name === 'submit_posts');\nif (!call) return [{ json: { ok: false, ctx: st.ctx, usage: st.usage,\n  error: 'The social agent finished without posts (stop reason: ' + st.stop_reason + ')' } }];\nconst r = typeof call.input === 'string' ? JSON.parse(call.input) : call.input;\nconst posts = (r.posts || []).filter(p => p && String(p.caption || '').trim().length > 20);\nif (!posts.length) return [{ json: { ok: false, ctx: st.ctx, usage: st.usage, error: 'No usable posts were returned' } }];\n// Flag anything that looks like an invented testimonial or a price for Brett's attention.\nposts.forEach(p => {\n  const flags = [];\n  if (/\\$\\s?\\d/.test(p.caption)) flags.push('mentions a price');\n  if (/[\"“][^\"”]{20,}[\"”]\\s*[-–—]\\s*\\w/.test(p.caption)) flags.push('looks like a quote/testimonial: make sure it is real and approved');\n  if (flags.length) p.note_for_brett = (p.note_for_brett || '') + ' ⚠️ Check: ' + flags.join('; ') + '.';\n});\nreturn [{ json: { ok: true, result: { posts }, ctx: st.ctx, usage: st.usage } }];"
+      }
+    },
+    {
+      "id": "05404e80-e277-5569-820c-bd0c16b06b0a",
+      "name": "Got posts?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2640,
+        100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "Got posts?",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "3a745cb2-f8db-5c60-9db2-d884cb089bc4",
+      "name": "Save posts + approvals",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2880,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from sci.social_save_posts($1::uuid, $2::jsonb, $3::jsonb)",
+        "options": {
+          "queryReplacement": "={{ [ $json.ctx.run_id, JSON.stringify($json.result), JSON.stringify($json.usage) ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "SCI DB – Social"
+        }
+      }
+    },
+    {
+      "id": "6370f7a5-0918-56fb-a508-3343d9069c7c",
+      "name": "Prepare messages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3120,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json).filter(r => r.approval_id);\nif (!rows.length) return [];\nconst out = [];\nif (rows[0].header) out.push({ json: { kind: 'header', text: rows[0].header } });\nrows.forEach(r => out.push({ json: { kind: 'card', text: r.card, approval_id: r.approval_id } }));\nreturn out;"
+      }
+    },
+    {
+      "id": "a48dfc01-c25f-52bd-8e1a-38c046380637",
+      "name": "Post card?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3360,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "Post card?",
+              "leftValue": "={{ $json.kind }}",
+              "rightValue": "card",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c46a7fe3-d040-5ffa-be2e-fc27f972be2b",
+      "name": "Send summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3600,
+        -100
+      ],
+      "parameters": {
+        "chatId": "8995080526",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "SCI – Telegram Bot"
+        }
+      }
+    },
+    {
+      "id": "173635f9-f879-5551-83eb-412a5c2c3255",
+      "name": "Send post card",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3600,
+        100
+      ],
+      "parameters": {
+        "chatId": "8995080526",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        },
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "✅ Approve",
+                    "additionalFields": {
+                      "callback_data": "={{ 'ap:' + $json.approval_id + ':approved' }}"
+                    }
+                  },
+                  {
+                    "text": "❌ Reject",
+                    "additionalFields": {
+                      "callback_data": "={{ 'ap:' + $json.approval_id + ':rejected' }}"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "✏️ Redraft",
+                    "additionalFields": {
+                      "callback_data": "={{ 'rd:' + $json.approval_id }}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "SCI – Telegram Bot"
+        }
+      }
+    },
+    {
+      "id": "39275fce-062a-59a8-9eb5-913054710739",
+      "name": "Record failure",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2880,
+        200
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select sci.social_fail($1::uuid, $2, $3::jsonb)",
+        "options": {
+          "queryReplacement": "={{ [ $json.ctx.run_id, $json.error, JSON.stringify($json.usage) ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "SCI DB – Social"
+        }
+      }
+    },
+    {
+      "id": "b866262d-9de1-5346-87f7-d2dcb7f27be5",
+      "name": "Tell Brett it failed",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3120,
+        200
+      ],
+      "parameters": {
+        "chatId": "8995080526",
+        "text": "={{ '⚠️ Social posts failed for ' + $('Check the posts').item.json.ctx.client + '\\n' + $('Check the posts').item.json.error + '\\nIt will be retried automatically.' }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "SCI – Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Run now (manual)": {
+      "main": [
+        [
+          {
+            "node": "Safety check (pause + budget)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hourly 8 AM–7 PM ET": {
+      "main": [
+        [
+          {
+            "node": "Safety check (pause + budget)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Safety check (pause + budget)": {
+      "main": [
+        [
+          {
+            "node": "OK to run?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OK to run?": {
+      "main": [
+        [
+          {
+            "node": "Next job (plan or redraft)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Next job (plan or redraft)": {
+      "main": [
+        [
+          {
+            "node": "Anything to do?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anything to do?": {
+      "main": [
+        [
+          {
+            "node": "Build Claude request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude request": {
+      "main": [
+        [
+          {
+            "node": "Prepare Claude call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Claude call": {
+      "main": [
+        [
+          {
+            "node": "Call Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude": {
+      "main": [
+        [
+          {
+            "node": "Collect results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect results": {
+      "main": [
+        [
+          {
+            "node": "Claude paused? Continue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude paused? Continue": {
+      "main": [
+        [
+          {
+            "node": "Prepare Claude call",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check the posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check the posts": {
+      "main": [
+        [
+          {
+            "node": "Got posts?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Got posts?": {
+      "main": [
+        [
+          {
+            "node": "Save posts + approvals",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save posts + approvals": {
+      "main": [
+        [
+          {
+            "node": "Prepare messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare messages": {
+      "main": [
+        [
+          {
+            "node": "Post card?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post card?": {
+      "main": [
+        [
+          {
+            "node": "Send post card",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record failure": {
+      "main": [
+        [
+          {
+            "node": "Tell Brett it failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": true,
+    "timezone": "America/New_York"
+  },
+  "active": false,
+  "pinData": {},
+  "tags": []
+}
