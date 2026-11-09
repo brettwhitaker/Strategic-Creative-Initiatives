@@ -35,3 +35,17 @@ Run `scripts/test_local.sh` to prove all of the above (53 database tests + end-t
 - [x] **Task 3**: Telegram bot: approvals, /pause, /status
 - [x] **Task 4**: Sales: prospect research + qualification
 - [x] **Task 5**: Sales: outreach drafts → approval card (draft only)
+
+## Current state (Nov 9, 2026: trial period)
+- Live: research (hourly 8 AM–7 PM ET), discovery (Mon & Wed), outreach drafts with Redraft/notes,
+  `/prospect`, `/status`, `/pause`, failure alerts, $25/month AI cap. External sending is OFF.
+- Email trust: SPF ✅, DKIM ✅ (Google Workspace), DMARC `p=none` ✅. Tighten DMARC to `p=quarantine`
+  a few weeks after DKIM is confirmed, before Phase 2 sending.
+- Website live on GitHub Pages (repo `sci-website`); domain verified with GitHub.
+- n8n on the paid Starter plan.
+- Help Wanted scan removed (Reddit blocks AI crawlers); its unused DB table from 0017 is harmless.
+
+## Next options
+1. Phase 2: Gmail sending credential + Sender workflow (owner turns `sending_enabled` on explicitly).
+2. Social Media agent (Ideal Move first; client named only as "a Northeast Florida move management company").
+3. First landing-page client via `sites/` template.
