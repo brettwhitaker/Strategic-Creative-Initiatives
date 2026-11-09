@@ -64,3 +64,8 @@ Each: ⋯ → Settings → Error workflow = **SCI – Error Alerts**, then Publi
 3. Import `07_help_wanted_scan.json`: database steps → SCI DB – Sales; Call Claude → SCI – Claude (Sales).
    Error workflow → SCI – Error Alerts. Publish. Runs Thursdays 9:40 AM ET.
 The scan never posts anything. You reply yourself from your own account, then tap 👍 I replied.
+
+## H. Help Wanted v2 (optional; currently not in use)
+Reddit blocks AI crawlers, so v2 scans Craigslist, public boards and freelance/contract postings instead, and puts
+one-tap Reddit search links in the weekly summary. To turn it on: run `dist/update_0018_help_wanted_v2.sql`,
+re-import `07_help_wanted_scan.json` (Sales DB + Claude credentials), Publish. To remove: archive the workflow.

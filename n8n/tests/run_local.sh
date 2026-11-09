@@ -96,5 +96,5 @@ cp "$WORK/hw.out" /tmp/ 2>/dev/null || true
 check "real post saved; invented post dropped" "select count(*)=1 and bool_and(title like 'Need a website%') from sci.help_wanted_posts"
 HW=$("${PSQL[@]}" -c "select id from sci.help_wanted_posts limit 1")
 grep -q "hw:$HW:replied" "$WORK/hw.out" && echo "PASS card carries 'I replied' button" || { echo "FAIL hw buttons"; exit 1; }
-grep -q "1 unconfirmed post(s) were dropped" "$WORK/hw.out" && echo "PASS summary mentions the dropped post" || { echo "FAIL hw summary"; exit 1; }
+grep -q "1 unconfirmed post(s) were dropped" "$WORK/hw.out" && grep -q "reddit.com/r/jacksonville/search" "$WORK/hw.out" && echo "PASS summary mentions the dropped post and includes Reddit links" || { echo "FAIL hw summary"; exit 1; }
 echo "ALL N8N WORKFLOW TESTS PASSED"

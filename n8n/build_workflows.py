@@ -649,7 +649,7 @@ POSTS_TOOL = {
             "properties": {
                 "url": {"type": "string", "description": "Exact URL of the post you retrieved"},
                 "platform": {"type": "string", "enum": ["reddit", "craigslist", "other"]},
-                "community": {"type": "string", "description": "e.g. r/jacksonville or 'Jacksonville Craigslist gigs'"},
+                "community": {"type": "string", "description": "e.g. 'Jacksonville Craigslist gigs' or the site/board name"},
                 "title": {"type": "string"},
                 "posted": {"type": "string", "description": "As shown on the post, or 'unknown'"},
                 "location": {"type": "string"},
@@ -671,8 +671,8 @@ const request = {
     { type: 'text', text: 'SCI BUSINESS KNOWLEDGE\n\n' + knowledge, cache_control: { type: 'ephemeral' } },
   ],
   tools: [
-    { type: 'web_search_20260209', name: 'web_search', max_uses: 6, allowed_domains: ['reddit.com', 'craigslist.org'] },
-    { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 6, max_content_tokens: 6000, allowed_domains: ['reddit.com', 'craigslist.org'] },
+    { type: 'web_search_20260209', name: 'web_search', max_uses: 6 },
+    { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 6, max_content_tokens: 6000 },
     POSTS_TOOL_JSON,
   ],
   tool_choice: { type: 'auto' },

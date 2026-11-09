@@ -37,12 +37,12 @@ MOCK_CLAUDE = r"""
 const st = $json.state;
 if (!st.request || !st.request.model || !Array.isArray(st.request.tools)) throw new Error('bad request built');
 if (st.request.tools.some(t => t.name === 'submit_posts')) {
-  if (!st.request.tools[0].allowed_domains.includes('reddit.com')) throw new Error('search not limited to reddit/craigslist');
+  if (JSON.stringify(st.request.tools).includes('reddit.com')) throw new Error('reddit must not be sent to the API (it is blocked)');
   return [{ json: { stop_reason: 'tool_use', usage: { input_tokens: 20000, output_tokens: 2500, server_tool_use: { web_search_requests: 4 } },
     content: [
-      { type: 'web_search_tool_result', tool_use_id: 'w9', content: [{ type: 'web_search_result', url: 'https://www.reddit.com/r/jacksonville/comments/zz1/website_help/', title: 'x' }] },
+      { type: 'web_search_tool_result', tool_use_id: 'w9', content: [{ type: 'web_search_result', url: 'https://jacksonville.craigslist.org/wrg/d/website-help/123.html', title: 'x' }] },
       { type: 'tool_use', id: 't9', name: 'submit_posts', input: { posts: [
-        { url: 'https://old.reddit.com/r/jacksonville/comments/zz1/website_help/', platform: 'reddit', community: 'r/jacksonville', title: 'Need a website for my food truck',
+        { url: 'https://jacksonville.craigslist.org/wrg/d/website-help/123.html', platform: 'craigslist', community: 'Jacksonville Craigslist gigs', title: 'Need a website for my food truck',
           posted: '2 days ago', location: 'Jacksonville', need_type: 'website', summary: 'Food truck owner needs a simple site.', quote: 'Looking for someone local to build a simple website',
           fit_note: 'Landing page.', suggested_reply: 'Congrats on the truck! A one-page site with your menu, schedule and a phone number covers 90% of what customers need...' },
         { url: 'https://www.reddit.com/r/smallbusiness/comments/made/up/', platform: 'reddit', community: 'r/smallbusiness', title: 'Invented post',

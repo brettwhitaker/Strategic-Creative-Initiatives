@@ -349,7 +349,7 @@ set local role agent_sales;
 update t_ctx set ctx = sci.sales_start_helpwanted('exec-hw');
 reset role;
 select t.assert('help-wanted start loads instructions (read-only, reply yourself)',
-  (select ctx->>'system_text' like '%submit_posts%' and ctx->>'system_text' like '%Brett himself%' from t_ctx));
+  (select ctx->>'system_text' like '%submit_posts%' and ctx->>'system_text' like '%for Brett to send himself%' and ctx->>'system_text' like '%Reddit is NOT available%' from t_ctx));
 create temp table t_hw as select * from sci.sales_save_helpwanted((select (ctx->>'run_id')::uuid from t_ctx),
   '{"posts":[
      {"url":"https://www.reddit.com/r/jacksonville/comments/abc/need_help_with_website/","platform":"reddit","community":"r/jacksonville","title":"Need help with website for my bakery","posted":"3 days ago","location":"Jacksonville","need_type":"website","summary":"Bakery owner wants a simple site.","quote":"I need a simple website for my bakery","fit_note":"Landing page fits.","suggested_reply":"Congrats on the bakery! Two quick tips..."},
@@ -362,6 +362,7 @@ select t.assert('card shows community, quote, suggested reply and link',
 select t.assert('bot: "I replied" logs it', sci.handle_telegram('helpwanted','111111',(select post_id from t_hw),'replied') like '👍%');
 select t.assert('…pressing again is harmless', sci.handle_telegram('helpwanted','111111',(select post_id from t_hw),'skip') like 'ℹ️ Already marked%');
 select t.assert('strangers cannot mark posts', sci.handle_telegram('helpwanted','999999',(select post_id from t_hw),'skip') is null);
+select t.assert('weekly summary includes one-tap Reddit searches', (select header like '%reddit.com/r/jacksonville/search/?q=%sort=new%' from t_hw));
 select t.assert('next scan knows which posts it already found', (select sci.sales_start_helpwanted()->'known_urls' ? 'https://www.reddit.com/r/jacksonville/comments/abc/need_help_with_website/'));
 
 rollback;
