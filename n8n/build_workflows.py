@@ -14,6 +14,8 @@ CRED = {
     "approver": {"postgres": {"id": "aI4noCV2CIVApiDB", "name": "SCI DB – Approver"}},
     "sales":    {"postgres": {"id": "N4KikjZT38HnQKQ5", "name": "SCI DB – Sales"}},
     "social":   {"postgres": {"id": "jO1FLX5aUgVSjLqt", "name": "SCI DB – Social"}},
+    "sender":   {"postgres": {"id": "", "name": "SCI DB – Sender"}},
+    "gmail":    {"gmailOAuth2": {"id": "", "name": "SCI – Gmail (Brett)"}},
     "telegram": {"telegramApi": {"id": "RnNUfVcWtcI7GmD9", "name": "SCI – Telegram Bot"}},
 }
 
@@ -86,7 +88,7 @@ $input.all().forEach((item, i) => {
   } else if (msg && typeof msg.text === 'string') {
     const text = msg.text.trim();
     const cmd = text.split(/\s+/)[0].split('@')[0].toLowerCase();
-    if (['/pause', '/resume', '/status', '/help', '/start', '/prospect', '/brief', '/post'].includes(cmd)) {
+    if (['/pause', '/resume', '/status', '/help', '/start', '/prospect', '/brief', '/post', '/sent'].includes(cmd)) {
       kind = cmd.slice(1);
       arg = text.slice(text.split(/\s+/)[0].length).trim().slice(0, cmd === '/post' ? 2000 : 200);
     }
@@ -551,7 +553,10 @@ const request = {
   tools: [DRAFT_TOOL_JSON],
   tool_choice: { type: 'auto' },
   messages: [{ role: 'user', content:
-    'Write the first-touch email for this prospect and finish by calling submit_draft.\n\n' +
+    (ctx.mode === 'followup'
+      ? 'Write FOLLOW-UP #' + (ctx.step - 1) + (ctx.step >= 3 ? ' (the final one)' : '') + ' for this prospect and finish by calling submit_draft.\n\n<previous_emails>\n' +
+        JSON.stringify(ctx.previous_emails || [], null, 1) + '\n</previous_emails>\n\n'
+      : 'Write the first-touch email for this prospect and finish by calling submit_draft.\n\n') +
     '<prospect>\n' + JSON.stringify(ctx.prospect, null, 2) + '\n</prospect>\n\n' +
     '<verified_findings>\n' + JSON.stringify(ctx.verified_findings, null, 2) + '\n</verified_findings>\n\n' +
     '<discovery_signal>\n' + JSON.stringify(ctx.discovery_signal) + '\n</discovery_signal>' +
@@ -593,7 +598,7 @@ drafts = workflow("SCI – Sales: Outreach Drafts", [
          {"rule": {"interval": [{"field": "cronExpression", "expression": "50 8-19 * * *"}]}}, [0, 100]),
     pg("Safety check (pause + budget)", "select ok, reason from sci.guard_check('sales', 0.20)", None, [240, 0], "sales"),
     if_node("OK to run?", "={{ $json.ok }}", "true", "", [480, 0]),
-    pg("Take next draft task", "select id from sci.claim_next_task_of_type('sales', 'draft_outreach', 'n8n')", None, [720, 0], "sales"),
+    pg("Take next draft task", "select id from sci.claim_next_sales_draft('n8n')", None, [720, 0], "sales"),
     pg("Load prospect + findings", "select sci.sales_start_outreach($1::uuid, $2) as ctx",
        "={{ [ $json.id, String($execution.id) ] }}", [960, 0], "sales"),
     if_node("Opted out? Skip", "={{ $json.ctx.skip === true }}", "true", "", [1200, 0]),
@@ -794,6 +799,60 @@ briefing = workflow("SCI – Monday Briefing & Health Check", [
         ("Daily 12:20 PM & 6:20 PM ET", "Anything stuck?"), ("Anything stuck?", "Stuck?"), ("Stuck?", "Alert Brett", 0)))
 briefing["settings"]["timezone"] = "America/New_York"
 
+# ---------------------------------------------------------------- 10. Email: send approved emails + check replies (Phase 2)
+def gmail(name, op, params, pos, **extra):
+    return node(name, "n8n-nodes-base.gmail", 2.1, {"resource": "message", "operation": op, **params}, pos, CRED["gmail"], **extra)
+
+NORMALIZE_INBOX_JS = r"""
+// Turn Gmail messages into the small shape the database expects.
+const msgs = $input.all().map(i => i.json).map(m => ({
+  id: m.id,
+  thread_id: m.threadId || m.thread_id || '',
+  from: m.From || (m.from && (m.from.text || (m.from.value && m.from.value[0] && m.from.value[0].address))) || '',
+  subject: m.Subject || m.subject || '',
+  snippet: m.snippet || '',
+}));
+return [{ json: { messages: msgs } }];
+""".strip()
+
+J = "$('Next email to send').item.json.job"
+email = workflow("SCI – Email: Send & Check Replies", [
+    node("Run now (manual)", "n8n-nodes-base.manualTrigger", 1, {}, [0, -150]),
+    node("Hourly 8 AM–8 PM ET", "n8n-nodes-base.scheduleTrigger", 1.2,
+         {"rule": {"interval": [{"field": "cronExpression", "expression": "35 8-20 * * *"}]}}, [0, 150]),
+    # --- send one approved email (Mon–Fri 9–5, daily cap, only when sending is ON: all enforced in the database)
+    pg("Next email to send", "select sci.sender_next() as job", None, [260, -150], "sender"),
+    if_node("Anything to send?", "={{ $json.job.none === true }}", "false", "", [500, -150]),
+    if_node("Reply in thread?", "={{ $json.job.mode }}", "equals", "reply", [740, -150], typ="string"),
+    gmail("Send as reply", "reply", {"messageId": f"={{{{ {J}.reply_to_message_id }}}}", "emailType": "text",
+          "message": f"={{{{ {J}.body }}}}", "options": {"appendAttribution": False, "senderName": "Brett Whitaker"}},
+          [980, -250], onError="continueErrorOutput"),
+    gmail("Send new email", "send", {"sendTo": f"={{{{ {J}.to }}}}", "subject": f"={{{{ {J}.subject }}}}", "emailType": "text",
+          "message": f"={{{{ {J}.body }}}}", "options": {"appendAttribution": False, "senderName": "Brett Whitaker"}},
+          [980, -50], onError="continueErrorOutput"),
+    pg("Record sent", "select sci.sender_done($1::uuid, true, $2, $3) as note",
+       f"={{{{ [ {J}.outbound_id, $json.id, $json.threadId ] }}}}", [1220, -250], "sender"),
+    pg("Record failure", "select sci.sender_done($1::uuid, false, null, null, $2) as note",
+       f"={{{{ [ {J}.outbound_id, String(($json.error && ($json.error.message || $json.error)) || 'send failed') ] }}}}", [1220, -50], "sender"),
+    tg_send("Tell Brett it was sent", OWNER_CHAT_ID, "={{ $json.note }}", [1460, -250]),
+    tg_send("Tell Brett it failed", OWNER_CHAT_ID, "={{ $json.note }}", [1460, -50]),
+    # --- check the inbox for replies
+    gmail("Recent inbox mail", "getAll", {"returnAll": False, "limit": 25, "simple": True,
+          "filters": {"q": "in:inbox newer_than:2d -from:me"}}, [260, 200]),
+    node("Tidy messages", "n8n-nodes-base.code", 2, {"jsCode": NORMALIZE_INBOX_JS}, [500, 200]),
+    pg("Match replies", "select alert from sci.process_inbox($1::jsonb)", "={{ [ JSON.stringify($json.messages) ] }}", [740, 200], "sender"),
+    tg_send("Alert Brett", OWNER_CHAT_ID, "={{ $json.alert }}", [980, 200]),
+], link(("Run now (manual)", "Next email to send"), ("Run now (manual)", "Recent inbox mail"),
+        ("Hourly 8 AM–8 PM ET", "Next email to send"), ("Hourly 8 AM–8 PM ET", "Recent inbox mail"),
+        ("Next email to send", "Anything to send?"),
+        ("Anything to send?", "Reply in thread?", 0),
+        ("Reply in thread?", "Send as reply", 0), ("Reply in thread?", "Send new email", 1),
+        ("Send as reply", "Record sent", 0), ("Send as reply", "Record failure", 1),
+        ("Send new email", "Record sent", 0), ("Send new email", "Record failure", 1),
+        ("Record sent", "Tell Brett it was sent"), ("Record failure", "Tell Brett it failed"),
+        ("Recent inbox mail", "Tidy messages"), ("Tidy messages", "Match replies"), ("Match replies", "Alert Brett")))
+email["settings"]["timezone"] = "America/New_York"
+
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
     for fname, wf in [("01_error_alerts.json", error_alerts), ("02_telegram_bot.json", telegram_bot),
@@ -802,6 +861,7 @@ if __name__ == "__main__":
                       ("05_weekly_discovery.json", discovery),
                       ("06_outreach_drafts.json", drafts),
                       ("08_social_content_planner.json", social),
-                      ("09_briefing_and_health.json", briefing)]:
+                      ("09_briefing_and_health.json", briefing),
+                      ("10_email_send_and_replies.json", email)]:
         (OUT / fname).write_text(json.dumps(wf, indent=2, ensure_ascii=False))
         print("wrote", OUT / fname)

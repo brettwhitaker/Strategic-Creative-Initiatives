@@ -10,6 +10,7 @@ cat > "$WORK/creds.json" <<'EOF'
  {"id":"credAppr","name":"SCI DB – Approver","type":"postgres","data":{"host":"127.0.0.1","port":55440,"database":"postgres","user":"sci_approver","password":"testpw","ssl":"disable","maxConnections":5}},
  {"id":"credSales","name":"SCI DB – Sales","type":"postgres","data":{"host":"127.0.0.1","port":55440,"database":"postgres","user":"agent_sales","password":"testpw","ssl":"disable","maxConnections":5}},
  {"id":"credSocial","name":"SCI DB – Social","type":"postgres","data":{"host":"127.0.0.1","port":55440,"database":"postgres","user":"agent_social","password":"testpw","ssl":"disable","maxConnections":5}},
+ {"id":"credSender","name":"SCI DB – Sender","type":"postgres","data":{"host":"127.0.0.1","port":55440,"database":"postgres","user":"agent_sender","password":"testpw","ssl":"disable","maxConnections":5}},
  {"id":"credTg","name":"SCI – Telegram Bot","type":"telegramApi","data":{"accessToken":"0:dummy"}}
 ]
 EOF
@@ -111,4 +112,21 @@ echo "== 9. Briefing & health workflow (run its queries directly)"
 B=$("${PSQL[@]}" -c "set role sci_approver; select sci.weekly_briefing()")
 echo "$B" | grep -q "PIPELINE" && echo "PASS Approver login can build the briefing" || { echo "FAIL briefing"; exit 1; }
 "$N8N" import:workflow --input="$HERE/../workflows/09_briefing_and_health.json" >/dev/null 2>&1 && echo "PASS briefing workflow imports into n8n" || { echo "FAIL import 09"; exit 1; }
+
+echo "== 10. Email: send approved emails + check replies (Gmail replaced by stand-ins)"
+"${PSQL[@]}" -c "alter role agent_sender login password 'testpw'" >/dev/null
+"${PSQL[@]}" -c "select sci.decide_approval(a.id, 'approved', 'owner_console') from sci.approvals a join sci.outbound_actions o on o.id = a.subject_id where o.idempotency_key like 'outreach:%' and a.decision = 'pending'" >/dev/null
+"${PSQL[@]}" -c "select sci.mark_sent_manually('Bartram', '111111')" >/dev/null
+"${PSQL[@]}" -c "select sci.queue_self_test_email(); update sci.system_controls set sending_enabled = true where id" >/dev/null
+"$N8N" import:workflow --input="$WORK/10_email_send_and_replies.json" >/dev/null 2>&1
+"$N8N" execute --id=testEmail --rawOutput > "$WORK/email.out" 2>&1 || { cat "$WORK/email.out"; exit 1; }
+cp "$WORK/email.out" /tmp/ 2>/dev/null || true
+check "approved email was sent once and recorded with its Gmail ids (as the Sender login)" "select count(*)=1 from sci.outbound_actions where external_id='gm-sent-1' and status='sent' and payload->>'thread_id'='th-sent-1'"
+grep -q "📤 Sent: .*SCI test email" "$WORK/email.out" && echo "PASS Brett is told the email went out" || { echo "FAIL sent notice"; exit 1; }
+check "a prospect's reply is matched; the business is marked replied" "select stage='replied' from sci.prospects p join sci.organizations o on o.id=p.organization_id where o.name='Bartram Trail Dental'"
+grep -q "📬 REPLY from Bartram Trail Dental" "$WORK/email.out" && echo "PASS reply alert sent to Telegram" || { echo "FAIL reply alert"; exit 1; }
+grep -q "news@example.test" "$WORK/email.out" && grep -q "REPLY from.*news@" "$WORK/email.out" && { echo "FAIL newsletter alerted"; exit 1; } || echo "PASS unrelated mail is ignored"
+"$N8N" execute --id=testEmail --rawOutput > "$WORK/email2.out" 2>&1 || true
+grep -q "📬 REPLY" "$WORK/email2.out" && { echo "FAIL duplicate reply alert"; exit 1; } || echo "PASS the same reply never alerts twice"
+"${PSQL[@]}" -c "update sci.system_controls set sending_enabled = false where id" >/dev/null
 echo "ALL N8N WORKFLOW TESTS PASSED"

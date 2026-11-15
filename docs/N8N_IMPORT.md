@@ -82,3 +82,13 @@ Workflow files now carry the IDs of your n8n credentials, so the right login is 
 4. Back in n8n, click the empty canvas → Ctrl+V. Check that no step shows a red warning.
 5. Publish (version name describing the change).
 Brand-new workflows are still added with Create workflow → ⋯ → Import from File.
+
+## I. Phase 2: sending, follow-ups, reply alerts
+1. Supabase: `dist/update_0025_phase2_sending.sql`.
+2. Update (copy-paste) **Telegram Bot** (`/sent`) and **Outreach Drafts** (follow-ups).
+3. Sender login: `alter role agent_sender login password '...';` → n8n Postgres credential **SCI DB – Sender**
+   (user `agent_sender.<project-ref>`).
+4. Gmail: n8n credential **Gmail OAuth2 API** → Sign in with Google as brett@ → name **SCI – Gmail (Brett)**.
+5. Import `10_email_send_and_replies.json` (after the two credential IDs are built in). Error workflow. Publish.
+6. Test: `select sci.queue_self_test_email();` then turn sending ON (owner only):
+   `update sci.system_controls set sending_enabled = true where id;`  (OFF again: `= false`)

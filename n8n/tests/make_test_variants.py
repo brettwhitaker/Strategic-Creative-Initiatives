@@ -10,7 +10,7 @@ import json, pathlib, sys, copy
 ROOT = pathlib.Path(__file__).resolve().parents[1] / "workflows"
 out, approval_id = pathlib.Path(sys.argv[1]), sys.argv[2]
 out.mkdir(parents=True, exist_ok=True)
-CRED_IDS = {"SCI DB – Approver": "credAppr", "SCI DB – Sales": "credSales", "SCI – Telegram Bot": "credTg", "SCI – Claude (Sales)": "credClaude", "SCI DB – Social": "credSocial"}
+CRED_IDS = {"SCI DB – Approver": "credAppr", "SCI DB – Sales": "credSales", "SCI – Telegram Bot": "credTg", "SCI – Claude (Sales)": "credClaude", "SCI DB – Social": "credSocial", "SCI DB – Sender": "credSender", "SCI – Gmail (Brett)": "credGmail"}
 
 def fix_creds(n):
     for v in n.get("credentials", {}).values():
@@ -102,6 +102,18 @@ def variant(fname, wf_id, fake_updates=None):
         if n["name"] == "Call Claude":
             n.update(type="n8n-nodes-base.code", typeVersion=2, parameters={"jsCode": MOCK_CLAUDE})
             n.pop("credentials", None)
+        elif n["type"] == "n8n-nodes-base.gmail":
+            op = n["parameters"]["operation"]
+            if op in ("send", "reply"):
+                code = "return [{ json: { id: 'gm-sent-1', threadId: 'th-sent-1', labelIds: ['SENT'], _op: '" + op + "' } }];"
+            else:
+                code = ("return [{ json: { id: 'in-77', threadId: 'th-x', snippet: 'Thanks Brett! Yes, let us talk next week.', "
+                        "From: 'Owner <info@flemingpt.test>', Subject: 'Re: A quick idea for your homepage' } }, "
+                        "{ json: { id: 'in-78', threadId: 'th-y', snippet: 'newsletter', From: 'News <news@example.test>', Subject: 'Weekly news' } }];")
+            n.update(type="n8n-nodes-base.code", typeVersion=2, parameters={"jsCode": code})
+            n.pop("credentials", None)
+        elif n["name"] == "Next email to send":
+            n["parameters"]["query"] = "select sci.sender_next('2026-11-17 15:00:00+00') as job"   # a Tuesday, 10 AM ET
         elif n["type"] == "n8n-nodes-base.telegram":
             telegram_to_set(n)
         elif n["type"] == "n8n-nodes-base.telegramTrigger":
@@ -114,6 +126,9 @@ def variant(fname, wf_id, fake_updates=None):
     if fname.startswith("04"):
         wf["nodes"] = [n for n in wf["nodes"] if n["type"] != "n8n-nodes-base.scheduleTrigger"]
         wf["connections"].pop("Hourly 8 AM–7 PM ET", None)
+    if fname.startswith("10"):
+        wf["nodes"] = [n for n in wf["nodes"] if n["type"] != "n8n-nodes-base.scheduleTrigger"]
+        wf["connections"].pop("Hourly 8 AM–8 PM ET", None)
     if fname.startswith("08"):
         wf["nodes"] = [n for n in wf["nodes"] if n["type"] != "n8n-nodes-base.scheduleTrigger"]
         wf["connections"].pop("Hourly 8 AM–7 PM ET", None)
@@ -147,4 +162,5 @@ variant("04_sales_research.json", "testResearch")
 variant("05_weekly_discovery.json", "testDiscovery")
 variant("06_outreach_drafts.json", "testDrafts")
 variant("08_social_content_planner.json", "testSocial")
+variant("10_email_send_and_replies.json", "testEmail")
 print("ok")

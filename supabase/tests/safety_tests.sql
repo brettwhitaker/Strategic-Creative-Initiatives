@@ -472,6 +472,82 @@ select t.assert('story post saved for approval with its own key and a "pick the 
 select t.assert('LinkedIn is spelled properly on cards', sci.handle_telegram('help','111111') is not null
   and (select count(*) = 0 from sci.approvals where summary like '%Linkedin%' and created_at > now() - interval '1 minute'));
 
+-- ---- Phase 2: manual /sent, follow-ups, Sender, inbox ----
+create temp table t_p2(k text primary key, v text);
+grant all on t_p2 to agent_sender, agent_sales;
+-- an approved first-touch for Riverbend (d1) exists from the outreach tests above
+select t.expect_error('approved email cannot be marked sent without the manual flag',
+  $$update sci.outbound_actions set status = 'sent' where prospect_id = '00000000-0000-0000-0000-0000000000d1' and status = 'approved'$$);
+update sci.prospects set is_test = false where id = '00000000-0000-0000-0000-0000000000d1';
+update sci.outbound_actions set is_test = false where prospect_id = '00000000-0000-0000-0000-0000000000d1' and status in ('draft','pending_approval','approved');
+select t.assert('bot: /sent records a manual send and schedules follow-up #1',
+  sci.handle_telegram('sent','111111',null,null,'Riverbend') like '📤 Recorded: your email to Riverbend%Follow-up #1 will be drafted%');
+select t.assert('…prospect is now contacted and the follow-up waits 4 days',
+  (select stage = 'contacted' from sci.prospects where id = '00000000-0000-0000-0000-0000000000d1')
+  and (select due_at > now() + interval '3 days' from sci.tasks where dedupe_key = 'followup:00000000-0000-0000-0000-0000000000d1:step2'));
+select t.assert('bot: strangers cannot record sends', sci.handle_telegram('sent','999999',null,null,'Riverbend') is null);
+select t.assert('a follow-up is not drafted before it is due', (select count(*) = 0 from sci.claim_next_task_of_type('sales','draft_followup')));
+update sci.tasks set due_at = now() - interval '1 minute' where dedupe_key = 'followup:00000000-0000-0000-0000-0000000000d1:step2';
+set local role agent_sales;
+insert into t_p2 select 'task', id::text from sci.claim_next_sales_draft();
+update t_ctx set ctx = sci.sales_start_outreach((select v::uuid from t_p2 where k = 'task'), 'exec-f1');
+reset role;
+select t.assert('due follow-up is picked first and carries the previous email (without footer)',
+  (select ctx->>'mode' = 'followup' and (ctx->>'step')::int = 2 and jsonb_array_length(ctx->'previous_emails') >= 1
+          and ctx->'previous_emails'->0->>'body' not like '%reply and let me know%' and ctx->>'system_text' like '%FOLLOW-UP #1%' from t_ctx));
+set local role agent_sales;
+update t_ctx set ctx = ctx || jsonb_build_object('saved', sci.sales_save_outreach((ctx->>'run_id')::uuid, (ctx->>'task_id')::uuid,
+  '{"subject":"anything","body":"Hi Dana,\n\nOne idea that came to mind: a short post answering the question your customers ask most. Happy to sketch two topics if useful.","angle":"content","finding_ids_used":[],"note_for_brett":"Adds one idea."}'::jsonb,
+  '{"input_tokens":3000,"output_tokens":400}'::jsonb));
+reset role;
+select t.assert('follow-up card is labeled, subject is "Re:" the original, key is step2',
+  (select ctx->'saved'->>'card' like '📝 Follow-up #1 for approval%Subject: Re: %' from t_ctx)
+  and exists (select 1 from sci.outbound_actions where idempotency_key like 'outreach:00000000-0000-0000-0000-0000000000d1:step2:email%' and status = 'pending_approval'));
+select sci.handle_telegram('decision','111111',(select (ctx->'saved'->>'approval_id')::uuid from t_ctx),'approved');
+
+-- Sender
+select t.assert('Sender does nothing while sending is OFF', (select sci.sender_next()->>'reason' = 'sending is off'));
+update sci.system_controls set sending_enabled = true where id;
+select t.assert('Sender waits outside business hours (Sunday 3 PM ET)',
+  (select sci.sender_next(('2026-11-15 15:00'::timestamp at time zone 'America/New_York'))->>'reason' = 'outside business hours'));
+set local role agent_sender;
+insert into t_p2 select 'job', sci.sender_next(('2026-11-17 10:00'::timestamp at time zone 'America/New_York'))::text;
+reset role;
+select t.assert('Sender picks the approved follow-up on a Tuesday 10 AM, as a new message (manual first email has no Gmail id)',
+  (select (v::jsonb->>'to') = 'dana@riverbendplumbing.test' and (v::jsonb->>'subject') like 'Re: %' and (v::jsonb->>'mode') = 'new' from t_p2 where k = 'job'));
+set local role agent_sender;
+insert into t_p2 select 'done', sci.sender_done((select (v::jsonb->>'outbound_id')::uuid from t_p2 where k = 'job'), true, 'gmail-123', 'thread-9');
+reset role;
+select t.assert('after sending: marked sent with Gmail ids, final follow-up scheduled',
+  (select v like '📤 Sent:%Follow-up #2 will be drafted%' from t_p2 where k = 'done')
+  and exists (select 1 from sci.outbound_actions where external_id = 'gmail-123' and status = 'sent' and payload->>'thread_id' = 'thread-9')
+  and exists (select 1 from sci.tasks where dedupe_key = 'followup:00000000-0000-0000-0000-0000000000d1:step3' and status = 'queued'));
+update sci.system_controls set daily_send_cap = 1 where id;
+select t.assert('Sender stops at the daily cap',
+  (select sci.sender_next(('2026-11-17 10:00'::timestamp at time zone 'America/New_York'))->>'reason' in ('daily cap reached','nothing approved to send')));
+update sci.system_controls set daily_send_cap = 8 where id;
+
+-- Inbox
+set local role agent_sender;
+create temp table t_alerts as select * from sci.process_inbox(
+  '[{"id":"in-1","thread_id":"thread-9","from":"Dana Testperson <dana@riverbendplumbing.test>","subject":"Re: An idea","snippet":"Thanks Brett, this is timely. Can we talk Thursday?"},
+    {"id":"in-2","from":"Someone <random@else.test>","subject":"Hello","snippet":"unrelated"}]'::jsonb);
+reset role;
+select t.assert('a prospect reply triggers ONE alert; unrelated mail is ignored',
+  (select count(*) = 1 and bool_and(alert like '📬 REPLY from Riverbend%Can we talk Thursday%') from t_alerts));
+select t.assert('…stage becomes replied and the pending follow-up is cancelled',
+  (select stage = 'replied' from sci.prospects where id = '00000000-0000-0000-0000-0000000000d1')
+  and (select status = 'cancelled' from sci.tasks where dedupe_key = 'followup:00000000-0000-0000-0000-0000000000d1:step3'));
+select t.assert('the same Gmail message never alerts twice',
+  (select count(*) = 0 from sci.process_inbox('[{"id":"in-1","thread_id":"thread-9","from":"dana@riverbendplumbing.test","subject":"Re","snippet":"x"}]'::jsonb)));
+update sci.prospects set stage = 'contacted' where id = '00000000-0000-0000-0000-0000000000d1';
+select t.assert('an opt-out reply adds them to do-not-contact',
+  (select bool_and(alert like '🚫%asked not to be contacted%') from sci.process_inbox(
+     '[{"id":"in-3","from":"dana@riverbendplumbing.test","subject":"Re","snippet":"Please remove me from your list"}]'::jsonb)));
+select t.assert('…and they are suppressed', sci.is_suppressed('dana@riverbendplumbing.test'));
+select t.assert('self-test email can be queued by the owner', sci.queue_self_test_email() like 'Test email to %queued%');
+update sci.system_controls set sending_enabled = false where id;
+
 rollback;
 \echo
 \echo ALL SAFETY TESTS PASSED
