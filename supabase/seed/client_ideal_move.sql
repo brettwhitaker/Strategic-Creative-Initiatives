@@ -213,6 +213,13 @@ Ideal Move helps families organize the spaces they use every day, so settling in
 overwhelming after moving day.
 Planning a move in Jacksonville or the surrounding area? Message us here or connect through our website anytime. 📦🏡
 (Carousel: "What room do you think is most often underestimated when move planning?", 6 pages)
+
+[10] A move doesn't have to take over your entire life.
+When the planning happens early and the right details are coordinated ahead of time, moving day becomes part of a
+smooth transition instead of a disruption.
+Ideal Move helps families prepare so they can arrive ready to settle in and feel at home sooner.
+Follow along as we share practical ideas and insights that can make the moving process feel more manageable from the start. 📦➡️🏡
+(Carousel: "Moving Doesn't Have to Take Over Your Life", 6 pages: a series opener; good fit for busy professionals.)
 $k$, 'owner (from Brett''s published posts)')
   on conflict do nothing;
 
