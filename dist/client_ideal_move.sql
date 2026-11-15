@@ -1,6 +1,6 @@
 -- =====================================================================
 -- Client: Ideal Move (move management, Northeast Florida). Knowledge v1 drafted by Claude from the
--- posts Brett shared (Nov 2026). Brett: review and correct anything marked "(confirm)".
+-- posts Brett shared (Nov 2026); second audience (busy professionals / younger families) added at Brett's request. Brett: review and correct anything marked "(confirm)".
 -- Public-facing SCI material never names this client; this private knowledge base does.
 -- =====================================================================
 do $$
@@ -14,8 +14,10 @@ begin
 
   insert into sci.client_knowledge(client_id, kind, content, approved_by) values
   (cid, 'brand_guide', $k$
-Ideal Move is a Northeast Florida senior move management company: "making downsizing and senior relocation a
-positive experience." They help clients before, during and after a move. Brand colors: teal/green and navy
+Ideal Move is a Northeast Florida move management company. Known for senior move management ("making downsizing
+and senior relocation a positive experience"), and growing a second focus: busy professionals and younger families
+who want their move handled and their new home set up exactly how they like it. They help clients before, during
+and after a move. Brand colors: teal/green and navy
 (from their graphics). Tone: warm, calm, organized, reassuring.
 $k$, 'owner (draft by Claude, please review)'),
 
@@ -31,16 +33,25 @@ Never state prices, timelines or guarantees in posts.
 $k$, 'owner (draft by Claude, please review)'),
 
   (cid, 'audience', $k$
-- Older adults downsizing or relocating, often to senior or active-adult communities (e.g., new communities
-  like Fleet Landing Nocatee) and their adult children who help coordinate the move.
-- Individuals and families going through a major life transition who feel overwhelmed by a move.
-- Referral partners (mainly on LinkedIn): senior living communities, realtors, estate and elder-law attorneys,
-  financial planners, care managers. (confirm)
+TWO CORE AUDIENCES (keep both; never lose the older audience they serve so well):
+A. Older adults downsizing or relocating, often to senior or active-adult communities (e.g., new communities
+   like Fleet Landing Nocatee), and the adult children who help coordinate the move. What they want: calm, care,
+   patience, someone trustworthy handling the details and decisions.
+B. Busy professionals and younger families with the means to pay for convenience: relocating for work, juggling
+   careers and kids, building or buying in new communities. What they want: their time back, and to walk into a
+   finished home that's unpacked and set up exactly how they like it.
+Also: individuals and families going through any major life transition who feel overwhelmed by a move.
+Referral partners (mainly on LinkedIn): senior living communities, elder-law and estate attorneys, financial
+planners and care managers (audience A); realtors, relocation specialists, HR/corporate relocation contacts and
+new-home builders (audience B).
 Area: Northeast Florida (Jacksonville, St. Johns County, Nocatee, Ponte Vedra). (confirm exact service area)
 $k$, 'owner (draft by Claude, please review)'),
 
   (cid, 'voice', $k$
 VOICE: warm, reassuring and practical; "we" voice; speaks to the feelings behind a move, not just logistics.
+- Same warmth for both audiences, different emphasis: posts for older adults lead with calm, care and support;
+  posts for busy professionals and young families lead with time saved, convenience and coming home to a finished,
+  personalized space. Never make either audience feel like an afterthought.
 - Opens with a clear hook, often a contrast or a question:
   "Moving into a new home is one thing. Feeling at home is another." /
   "Most people know what a moving company does. But what exactly does a move manager do? 🤔"
@@ -60,7 +71,12 @@ $k$, 'owner (draft by Claude, please review)'),
 4. Community and partners: events, senior communities, partner shout-outs (ONLY real events/partners Brett provides).
 5. Team and behind the scenes: the people, the care, a day on a move (with permission and real photos).
 6. Client stories and testimonials: ONLY real ones Brett provides with the client's permission.
+7. Your time back (audience B): the move-in-ready home, set up your way, so busy professionals and families can
+   focus on work and family instead of boxes (relocations, new builds, life getting busy).
 Rotate pillars; in a 3-post week use three different pillars.
+AUDIENCE BALANCE: every week include at least one post written for older adults and their families AND at least
+one written for busy professionals / younger families. A post may speak to both. Say in note_for_brett which
+audience each post is for.
 $k$, 'owner (draft by Claude, please review)'),
 
   (cid, 'do_not_say', $k$
@@ -75,8 +91,9 @@ $k$, 'owner (draft by Claude, please review)'),
   (cid, 'strategy', $k$
 Platforms: Facebook + Instagram via Meta Business Suite, and LinkedIn. (confirm)
 Goals: build trust with families and referral partners, explain the value of move management, keep the brand
-consistently visible. Calls to action: message on the platform or through their website. Hashtags: local +
-topic (e.g. #JacksonvilleFL #StJohnsCounty #MoveManagement #Downsizing #SeniorLiving #HomeSetup), 3-6 per post
+consistently visible, and grow the busy-professional / younger-family audience without losing the senior audience. Calls to action: message on the platform or through their website. Hashtags: local +
+topic (e.g. #JacksonvilleFL #StJohnsCounty #Nocatee #MoveManagement #Downsizing #SeniorLiving #HomeSetup
+#Relocation #NewHome #MovingToJacksonville), matched to the post's audience, 3-6 per post
 on Facebook/Instagram, 0-3 on LinkedIn.
 $k$, 'owner (draft by Claude, please review)'),
 
