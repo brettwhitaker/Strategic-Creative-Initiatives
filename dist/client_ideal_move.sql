@@ -27,8 +27,11 @@ Services (from their posts and banner):
 - Packing (protecting and preparing belongings) and unpacking (unboxing and putting everything away)
 - Space planning / planning your new space (floor plans)
 - Vendor coordination: arranging all necessary vendors; project management
-- Move-day support
-- Home setup: organizing and arranging the new space so it's "live-in ready"
+- Move-day support (can include packing, the move and complete setup in a single day)
+- Home setup: organizing and arranging the new space so it's "live-in ready": beds made, kitchen organized, art
+  placed, TV hung, favorite pieces displayed, balcony/patio set up, rugs vacuumed, furniture polished, and helpful
+  notes left so clients can find everything
+- Internal moves within a community (e.g., to a different residence in the same senior community)
 Never state prices, timelines or guarantees in posts.
 $k$, 'owner (draft by Claude, please review)'),
 
@@ -44,7 +47,9 @@ Also: individuals and families going through any major life transition who feel 
 Referral partners (mainly on LinkedIn): senior living communities, elder-law and estate attorneys, financial
 planners and care managers (audience A); realtors, relocation specialists, HR/corporate relocation contacts and
 new-home builders (audience B).
-Area: Northeast Florida (Jacksonville, St. Johns County, Nocatee, Ponte Vedra). (confirm exact service area)
+Area: Jacksonville and North Florida (their own wording), including St. Johns County, Nocatee and Ponte Vedra.
+Their own summary: "professional move management, unpacking, organizing, and home setup for seniors, families, and
+busy professionals moving throughout Jacksonville and North Florida." 
 $k$, 'owner (draft by Claude, please review)'),
 
   (cid, 'voice', $k$
@@ -58,6 +63,11 @@ VOICE: warm, reassuring and practical; "we" voice; speaks to the feelings behind
 - Short paragraphs (1-3 sentences), plain words, gentle rhythm.
 - Mentions services naturally inside the story, not as a sales list (a short list is fine occasionally).
 - 1-3 emojis per post, from the brand's usual set: 🏡 💚 ✨ 🤔 (LinkedIn: 0-1).
+- Signature lines they use (reuse sparingly, at most one per week): "The movers handle the truck. We help with
+  everything around it." / "Don't just arrive at your new address. Arrive home."
+- Real client stories open with an emotional, concrete moment ("The tears in her eyes said it all.", "Imagine
+  leaving your new home for the day and coming back to find everything in its place."), then the specific details
+  the team handled, then what it meant to the client. Clients are never named.
 - Ends with a soft, friendly call to action, e.g. "Need a little help getting settled? We'd love to make your
   next move easier!", "Curious about what professional move management could look like for you, your family,
   or someone you work with? We'd love to connect!", "You can also message us here or through our website."
@@ -90,10 +100,17 @@ $k$, 'owner (draft by Claude, please review)'),
 
   (cid, 'strategy', $k$
 Platforms: Facebook + Instagram via Meta Business Suite, and LinkedIn. (confirm)
+Formats: photo sets of finished homes and the team at work; swipeable carousels/documents for tips and questions
+("What room is most often underestimated during a move?", "How could your new house feel like home by bedtime?").
+Early performance signal (2 posts, not proof): a real client story with real photos reached ~50 impressions vs ~3
+for a recent post. Prioritize real stories: each week, ask Brett in note_for_brett for ONE real story or photo set,
+and draft the story post as a fill-in template ([ADD: ...]) so the team only supplies the facts.
+Communities they have worked in (mention ONLY when Brett provides a real story or event there): Fleet Landing
+(WELLInspired Living) in Nocatee, Cypress Village.
 Goals: build trust with families and referral partners, explain the value of move management, keep the brand
 consistently visible, and grow the busy-professional / younger-family audience without losing the senior audience. Calls to action: message on the platform or through their website. Hashtags: local +
 topic (e.g. #JacksonvilleFL #StJohnsCounty #Nocatee #MoveManagement #Downsizing #SeniorLiving #HomeSetup
-#Relocation #NewHome #MovingToJacksonville), matched to the post's audience, 3-6 per post
+#Relocation #NewHome #MovingToJacksonville #UnpackingServices #HomeOrganization #NorthFlorida), matched to the post's audience, 3-6 per post
 on Facebook/Instagram, 0-3 on LinkedIn.
 $k$, 'owner (draft by Claude, please review)'),
 
@@ -144,6 +161,58 @@ organizing and setting up their new spaces.
 Our mission is to help make the transition into your new home feel more organized, manageable, and stress-free.
 🏡 Swipe through for a few tips on where to start!
 You can also message us here or through our website to ask any questions about our services!
+
+[5] Imagine leaving your new home for the day and coming back to find everything in its place. 🏡💚
+That's exactly what happened for one of our recent clients at Fleet Landing WELLInspired Living!
+After relocating from out of town, he trusted the Ideal Move team to help unpack his belongings, arrange his
+furniture, and get his new home ready while he was away.
+And we didn't stop at the big things! From carefully arranging his favorite pieces to vacuuming rugs, polishing
+furniture, and leaving helpful notes so he could find everything, our team took care of the little details, too.
+When he returned, he was amazed by how beautifully everything had come together!
+That's what we love most about what we do. Helping people walk into their new homes and feel like they're already home.
+Planning a move? Let us help you arrive to a home that is ready for you to enjoy! 📩
+
+[6] You've hired the movers. But who's handling everything else? 📦🏡
+Moving involves so much more than getting your belongings from one place to another.
+There's furniture to arrange, rooms to organize, decorations to put in place, and countless little decisions along the way.
+That's where the Ideal Move team comes in!
+From coordinating the details to adding those finishing touches that make a new space feel familiar, we're here to
+help make the entire transition easier.
+And as you can see, our team isn't afraid to roll up their sleeves and get things done! 💚
+The movers handle the truck. We help with everything around it.
+📩 Planning a move? Reach out to learn how we can help!
+
+[7] The tears in her eyes said it all. Her new house already felt like her new home, all before move day was even over. 💚
+For a recent internal move at Cypress Village, our team handled the packing, move, complete home setup, art
+placement, and TV hanging in a single day.
+By the time the person walked through the door, their bed was made. Her artwork was on the walls. Her favorite
+pieces were back on display. Even the balcony was set up and ready to enjoy.
+That's the value of managing the entire moving experience, not just getting belongings from one place to another.
+For Northeast Florida residents who want to settle in quickly, full move management can turn what might have been
+days or weeks of unpacking and setup into a home that's ready to enjoy from day one. 🏡
+(This real story post reached ~50 impressions, the best of the recent posts.)
+
+[8] How can the Ideal Move team help make your new house feel like home?
+By making sure the beds are made, the kitchen is organized, and the living room is ready to enjoy, not still
+buried beneath moving boxes. 🛏️
+Ideal Move provides professional move management, unpacking, organizing, and home setup for seniors, families, and
+busy professionals moving throughout Jacksonville and North Florida.
+The movers handle the truck. We handle the details that make your new space comfortable, functional, and familiar.
+Don't just arrive at your new address. Arrive home. 🏡
+#MoveManagement #UnpackingServices #HomeOrganization #NorthFlorida
+(Carousel: "How Could Your New House Feel Like Home by Bedtime?")
+
+[9] What room do most people underestimate during a move?
+For many families, it is the kitchen.
+It is not just where the dishes, pantry items, and utensils go.
+It is where morning routines start, meals come together, medications may be kept, and the everyday items you reach
+for without thinking need to make sense again.
+When the kitchen is set up thoughtfully, the whole home can start feeling more normal sooner.
+That is why resettling support matters.
+Ideal Move helps families organize the spaces they use every day, so settling into a new home feels less
+overwhelming after moving day.
+Planning a move in Jacksonville or the surrounding area? Message us here or connect through our website anytime. 📦🏡
+(Carousel: "What room do you think is most often underestimated when move planning?", 6 pages)
 $k$, 'owner (from Brett''s published posts)')
   on conflict do nothing;
 
