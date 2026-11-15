@@ -86,9 +86,9 @@ $input.all().forEach((item, i) => {
   } else if (msg && typeof msg.text === 'string') {
     const text = msg.text.trim();
     const cmd = text.split(/\s+/)[0].split('@')[0].toLowerCase();
-    if (['/pause', '/resume', '/status', '/help', '/start', '/prospect', '/brief'].includes(cmd)) {
+    if (['/pause', '/resume', '/status', '/help', '/start', '/prospect', '/brief', '/post'].includes(cmd)) {
       kind = cmd.slice(1);
-      arg = text.slice(text.split(/\s+/)[0].length).trim().slice(0, 200);
+      arg = text.slice(text.split(/\s+/)[0].length).trim().slice(0, cmd === '/post' ? 2000 : 200);
     }
     // A reply to a draft card = notes for a rewrite.
     const replied = msg.reply_to_message && msg.reply_to_message.text || '';
@@ -673,6 +673,9 @@ const slots = (ctx.slots || []).map((sl, i) => {
 let task = ctx.mode === 'plan'
   ? 'MODE: PLAN. Write one post for each slot below, in order.\n\n<slots>\n' + slots + '\n</slots>\n\n<recent_posts>\n' +
     JSON.stringify(ctx.recent_posts || [], null, 1) + '\n</recent_posts>'
+  : ctx.mode === 'story'
+  ? 'MODE: STORY. Write ONE finished post (slot_index 0) from these real notes Brett received from the client team. Use only these facts.\n\n<owner_notes>\n' +
+    (ctx.owner_notes || '') + '\n</owner_notes>'
   : 'MODE: REDRAFT. Rewrite this one post (slot_index 0).\n\n<slot>\n' + slots + '\n</slot>\n\n<previous_post>\n' +
     JSON.stringify(ctx.previous_post || {}, null, 1) + '\n</previous_post>' +
     (ctx.owner_notes ? '\n\n<owner_notes>\n' + ctx.owner_notes + '\n</owner_notes>' : '');

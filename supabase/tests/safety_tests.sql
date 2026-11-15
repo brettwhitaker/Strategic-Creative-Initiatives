@@ -448,6 +448,30 @@ select t.assert('discovery v3 searches two categories across the whole region',
 select t.assert('research v2 instructions are active (no-website check)',
   (select version = 2 and system_text like '%NO WEBSITE?%' and system_text like '%submit_research%' from sci.prompts where name = 'prospect_research' and is_active));
 
+-- ---- Social v2: /post stories, plain-writing rules ----
+select t.assert('social v2 instructions: complete posts only, plain writing, story mode',
+  (select version = 2 and system_text like '%COMPLETE POSTS ONLY%' and system_text like '%WRITE PLAINLY%' and system_text like '%STORY:%'
+     from sci.prompts where agent = 'social' and name = 'content_plan' and is_active));
+update sci.clients set is_test = false where name like 'TEST Client%';   -- the only active social client in this test
+select t.assert('bot: /post with too little text explains how', sci.handle_telegram('post','111111',null,null,'hi') like 'Send the story%');
+select t.assert('bot: /post queues a story post for the only client',
+  sci.handle_telegram('post','111111',null,null,'Downsizing move today, packed and set up in one day, she loved seeing her art on the walls') like '✍️ Got it. A finished post for TEST Client%');
+select t.assert('bot: strangers cannot request posts', sci.handle_telegram('post','999999',null,null,'Some story text that is long enough') is null);
+set local role agent_social;
+update t_ctx set ctx = sci.social_next_job('exec-story');
+reset role;
+select t.assert('story job carries Brett''s notes', (select ctx->>'mode' = 'story' and ctx->>'owner_notes' like 'Downsizing move today%' from t_ctx));
+set local role agent_social;
+create temp table t_story as select * from sci.social_save_posts((select (ctx->>'run_id')::uuid from t_ctx),
+  '{"posts":[{"slot_index":0,"pillar":"Client stories","hook":"Her art was on the walls by lunch.","caption":"Her art was on the walls by lunch. We packed, moved and set up her new home in one day.","hashtags":"#MoveManagement","creative_brief":"Team photos","note_for_brett":"Audience A."}]}'::jsonb,
+  '{"input_tokens":4000,"output_tokens":600}'::jsonb);
+reset role;
+select t.assert('story post saved for approval with its own key and a "pick the day" label',
+  (select bool_and(card like '%story post (pick the day)%') from t_story)
+  and exists (select 1 from sci.outbound_actions where idempotency_key like 'social:%:story:%' and status = 'pending_approval'));
+select t.assert('LinkedIn is spelled properly on cards', sci.handle_telegram('help','111111') is not null
+  and (select count(*) = 0 from sci.approvals where summary like '%Linkedin%' and created_at > now() - interval '1 minute'));
+
 rollback;
 \echo
 \echo ALL SAFETY TESTS PASSED

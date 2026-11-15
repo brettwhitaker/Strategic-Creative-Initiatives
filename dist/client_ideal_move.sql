@@ -103,8 +103,7 @@ Platforms: Facebook + Instagram via Meta Business Suite, and LinkedIn. (confirm)
 Formats: photo sets of finished homes and the team at work; swipeable carousels/documents for tips and questions
 ("What room is most often underestimated during a move?", "How could your new house feel like home by bedtime?").
 Early performance signal (2 posts, not proof): a real client story with real photos reached ~50 impressions vs ~3
-for a recent post. Prioritize real stories: each week, ask Brett in note_for_brett for ONE real story or photo set,
-and draft the story post as a fill-in template ([ADD: ...]) so the team only supplies the facts.
+for a recent post. Real stories come from the Ideal Move team as moves happen; Brett sends them with /post and the agent writes them up. Weekly plans are complete, ready-to-post content from the other pillars (no fill-in templates).
 Communities they have worked in (mention ONLY when Brett provides a real story or event there): Fleet Landing
 (WELLInspired Living) in Nocatee, Cypress Village.
 Goals: build trust with families and referral partners, explain the value of move management, keep the brand
