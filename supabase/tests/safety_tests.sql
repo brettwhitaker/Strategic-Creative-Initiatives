@@ -429,7 +429,14 @@ select t.assert('email redraft still works after the change',
 -- ---- Early warning + weekly briefing ----
 update sci.tasks set created_at = now() - interval '6 hours', attempts = 0, status = 'queued'
  where id = (select id from sci.tasks where type = 'research_prospect' and status = 'queued' limit 1);
-select t.assert('stuck research is flagged in /status, in plain words', sci.status_summary() like '%research task(s) waiting 6+ hours%Research Prospects%' and sci.status_summary() not like '%research_prospect%');
+update sci.agent_runs set started_at = now() - interval '10 hours' where workflow = 'research_prospect';
+select t.assert('stuck research is flagged when nothing has been picked up (during working hours), in plain words',
+  case when extract(hour from now() at time zone 'America/New_York') between 11 and 20
+       then sci.status_summary() like '%research task(s) waiting, and nothing has been picked up%Research Prospects%'
+       else sci.stuck_warning() is null end
+  and sci.status_summary() not like '%research_prospect%');
+insert into sci.agent_runs(agent, workflow, status) values ('sales','research_prospect','succeeded');
+select t.assert('a backlog that is being worked through is NOT flagged', sci.stuck_warning() is null);
 select t.assert('weekly briefing has pipeline, waiting-on-you, health and spend sections',
   sci.weekly_briefing() like '%PIPELINE%Researched:%WAITING ON YOU%HEALTH%AI spend:%');
 select t.assert('bot: /brief returns the briefing', sci.handle_telegram('brief','111111') like '📊 SCI weekly briefing%');
