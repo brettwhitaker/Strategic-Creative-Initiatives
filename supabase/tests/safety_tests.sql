@@ -438,6 +438,9 @@ update t_ctx set ctx = sci.sales_start_discovery('exec-d3');
 select t.assert('discovery v3 searches two categories across the whole region',
   (select ctx->'segment'->>'category' like '% and %' and (ctx->>'max_searches')::int = 10 from t_ctx));
 
+select t.assert('research v2 instructions are active (no-website check)',
+  (select version = 2 and system_text like '%NO WEBSITE?%' and system_text like '%submit_research%' from sci.prompts where name = 'prospect_research' and is_active));
+
 rollback;
 \echo
 \echo ALL SAFETY TESTS PASSED

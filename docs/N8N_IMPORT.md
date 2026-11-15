@@ -70,6 +70,6 @@ Plans are drafted Thursdays for the following week (Tue FB+IG, Wed LinkedIn, Fri
 Nothing is ever published automatically; approved posts are copied into Meta Business Suite / LinkedIn by hand.
 
 ## H. Week-1 upgrades: discovery v3, auto-research, Monday briefing, stuck-work alerts
-1. Supabase: run `dist/update_0020_discovery_v3_briefing.sql`.
+1. Supabase: run `dist/update_0020_0021_upgrades.sql`.
 2. Re-import `02_telegram_bot.json` (Approver) and `05_weekly_discovery.json` (Sales); archive the old copies.
 3. Import `09_briefing_and_health.json`: both database steps → **SCI DB – Approver**. Publish.
