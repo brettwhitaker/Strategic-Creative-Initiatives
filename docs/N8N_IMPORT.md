@@ -73,3 +73,12 @@ Nothing is ever published automatically; approved posts are copied into Meta Bus
 1. Supabase: run `dist/update_0020_0021_upgrades.sql`.
 2. Re-import `02_telegram_bot.json` (Approver) and `05_weekly_discovery.json` (Sales); archive the old copies.
 3. Import `09_briefing_and_health.json`: both database steps → **SCI DB – Approver**. Publish.
+
+## Updating an existing workflow (keeps its settings, error alerts and history)
+Workflow files now carry the IDs of your n8n credentials, so the right login is picked automatically.
+1. Open the workflow in n8n (Editor tab). Click an empty spot on the canvas.
+2. Ctrl+A (select all steps) → Delete.
+3. Open the new .json file in Notepad → Ctrl+A → Ctrl+C.
+4. Back in n8n, click the empty canvas → Ctrl+V. Check that no step shows a red warning.
+5. Publish (version name describing the change).
+Brand-new workflows are still added with Create workflow → ⋯ → Import from File.

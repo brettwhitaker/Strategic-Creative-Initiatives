@@ -37,7 +37,7 @@
       },
       "credentials": {
         "postgres": {
-          "id": "",
+          "id": "aI4noCV2CIVApiDB",
           "name": "SCI DB – Approver"
         }
       }
@@ -61,7 +61,7 @@
       },
       "credentials": {
         "telegramApi": {
-          "id": "",
+          "id": "RnNUfVcWtcI7GmD9",
           "name": "SCI – Telegram Bot"
         }
       }
@@ -102,7 +102,7 @@
       },
       "credentials": {
         "postgres": {
-          "id": "",
+          "id": "aI4noCV2CIVApiDB",
           "name": "SCI DB – Approver"
         }
       }
@@ -160,7 +160,7 @@
       },
       "credentials": {
         "telegramApi": {
-          "id": "",
+          "id": "RnNUfVcWtcI7GmD9",
           "name": "SCI – Telegram Bot"
         }
       }

@@ -11,10 +11,10 @@ OUT = pathlib.Path(__file__).parent / "workflows"
 OWNER_CHAT_ID = "8995080526"   # Brett's Telegram ID (not a secret)
 
 CRED = {
-    "approver": {"postgres": {"id": "", "name": "SCI DB – Approver"}},
-    "sales":    {"postgres": {"id": "", "name": "SCI DB – Sales"}},
+    "approver": {"postgres": {"id": "aI4noCV2CIVApiDB", "name": "SCI DB – Approver"}},
+    "sales":    {"postgres": {"id": "N4KikjZT38HnQKQ5", "name": "SCI DB – Sales"}},
     "social":   {"postgres": {"id": "", "name": "SCI DB – Social"}},
-    "telegram": {"telegramApi": {"id": "", "name": "SCI – Telegram Bot"}},
+    "telegram": {"telegramApi": {"id": "RnNUfVcWtcI7GmD9", "name": "SCI – Telegram Bot"}},
 }
 
 def node(name, type_, version, params, pos, creds=None, **extra):
@@ -338,7 +338,7 @@ CLAUDE_CALL = node("Call Claude", "n8n-nodes-base.httpRequest", 4.2, {
         {"name": "anthropic-beta", "value": "server-side-fallback-2026-07-01"}]},
     "sendBody": True, "specifyBody": "json", "jsonBody": "={{ JSON.stringify($json.state.request) }}",
     "options": {"timeout": 300000}},
-    [1680, 0], {"anthropicApi": {"id": "", "name": "SCI – Claude (Sales)"}},
+    [1680, 0], {"anthropicApi": {"id": "WDra1EEfE5LDfnb1", "name": "SCI – Claude (Sales)"}},
     retryOnFail=True, maxTries=2, waitBetweenTries=5000)
 
 V = "$('Check the research').item.json"

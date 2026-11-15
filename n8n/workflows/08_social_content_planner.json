@@ -206,7 +206,7 @@
       },
       "credentials": {
         "anthropicApi": {
-          "id": "",
+          "id": "WDra1EEfE5LDfnb1",
           "name": "SCI – Claude (Sales)"
         }
       },
@@ -396,7 +396,7 @@
       },
       "credentials": {
         "telegramApi": {
-          "id": "",
+          "id": "RnNUfVcWtcI7GmD9",
           "name": "SCI – Telegram Bot"
         }
       }
@@ -455,7 +455,7 @@
       },
       "credentials": {
         "telegramApi": {
-          "id": "",
+          "id": "RnNUfVcWtcI7GmD9",
           "name": "SCI – Telegram Bot"
         }
       }
@@ -502,7 +502,7 @@
       },
       "credentials": {
         "telegramApi": {
-          "id": "",
+          "id": "RnNUfVcWtcI7GmD9",
           "name": "SCI – Telegram Bot"
         }
       }

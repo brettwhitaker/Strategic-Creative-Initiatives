@@ -48,7 +48,7 @@
       },
       "credentials": {
         "postgres": {
-          "id": "",
+          "id": "N4KikjZT38HnQKQ5",
           "name": "SCI DB – Sales"
         }
       }
@@ -103,7 +103,7 @@
       },
       "credentials": {
         "postgres": {
-          "id": "",
+          "id": "N4KikjZT38HnQKQ5",
           "name": "SCI DB – Sales"
         }
       }
@@ -126,7 +126,7 @@
       },
       "credentials": {
         "postgres": {
-          "id": "",
+          "id": "N4KikjZT38HnQKQ5",
           "name": "SCI DB – Sales"
         }
       }
@@ -184,7 +184,7 @@
       },
       "credentials": {
         "telegramApi": {
-          "id": "",
+          "id": "RnNUfVcWtcI7GmD9",
           "name": "SCI – Telegram Bot"
         }
       }
@@ -251,7 +251,7 @@
       },
       "credentials": {
         "anthropicApi": {
-          "id": "",
+          "id": "WDra1EEfE5LDfnb1",
           "name": "SCI – Claude (Sales)"
         }
       },
@@ -371,7 +371,7 @@
       },
       "credentials": {
         "postgres": {
-          "id": "",
+          "id": "N4KikjZT38HnQKQ5",
           "name": "SCI DB – Sales"
         }
       }
@@ -430,7 +430,7 @@
       },
       "credentials": {
         "telegramApi": {
-          "id": "",
+          "id": "RnNUfVcWtcI7GmD9",
           "name": "SCI – Telegram Bot"
         }
       }
@@ -453,7 +453,7 @@
       },
       "credentials": {
         "postgres": {
-          "id": "",
+          "id": "N4KikjZT38HnQKQ5",
           "name": "SCI DB – Sales"
         }
       }
@@ -477,7 +477,7 @@
       },
       "credentials": {
         "telegramApi": {
-          "id": "",
+          "id": "RnNUfVcWtcI7GmD9",
           "name": "SCI – Telegram Bot"
         }
       }

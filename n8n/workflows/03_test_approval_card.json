@@ -28,7 +28,7 @@
       },
       "credentials": {
         "postgres": {
-          "id": "",
+          "id": "N4KikjZT38HnQKQ5",
           "name": "SCI DB – Sales"
         }
       }
@@ -75,7 +75,7 @@
       },
       "credentials": {
         "telegramApi": {
-          "id": "",
+          "id": "RnNUfVcWtcI7GmD9",
           "name": "SCI – Telegram Bot"
         }
       }
