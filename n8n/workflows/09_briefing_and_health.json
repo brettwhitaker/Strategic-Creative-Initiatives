@@ -53,9 +53,10 @@
       ],
       "parameters": {
         "chatId": "8995080526",
-        "text": "={{ $json.text }}",
+        "text": "={{ String(($json.text) ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }}",
         "additionalFields": {
-          "appendAttribution": false
+          "appendAttribution": false,
+          "parse_mode": "HTML"
         }
       },
       "credentials": {
@@ -151,9 +152,10 @@
       ],
       "parameters": {
         "chatId": "8995080526",
-        "text": "={{ $json.warning }}",
+        "text": "={{ String(($json.warning) ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }}",
         "additionalFields": {
-          "appendAttribution": false
+          "appendAttribution": false,
+          "parse_mode": "HTML"
         }
       },
       "credentials": {

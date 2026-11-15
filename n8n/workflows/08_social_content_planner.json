@@ -388,9 +388,10 @@
       ],
       "parameters": {
         "chatId": "8995080526",
-        "text": "={{ $json.text }}",
+        "text": "={{ String(($json.text) ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }}",
         "additionalFields": {
-          "appendAttribution": false
+          "appendAttribution": false,
+          "parse_mode": "HTML"
         }
       },
       "credentials": {
@@ -411,9 +412,10 @@
       ],
       "parameters": {
         "chatId": "8995080526",
-        "text": "={{ $json.text }}",
+        "text": "={{ String(($json.text) ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }}",
         "additionalFields": {
-          "appendAttribution": false
+          "appendAttribution": false,
+          "parse_mode": "HTML"
         },
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
@@ -492,9 +494,10 @@
       ],
       "parameters": {
         "chatId": "8995080526",
-        "text": "={{ '⚠️ Social posts failed for ' + $('Check the posts').item.json.ctx.client + '\\n' + $('Check the posts').item.json.error + '\\nIt will be retried automatically.' }}",
+        "text": "={{ String(('⚠️ Social posts failed for ' + $('Check the posts').item.json.ctx.client + '\\n' + $('Check the posts').item.json.error + '\\nIt will be retried automatically.') ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }}",
         "additionalFields": {
-          "appendAttribution": false
+          "appendAttribution": false,
+          "parse_mode": "HTML"
         }
       },
       "credentials": {

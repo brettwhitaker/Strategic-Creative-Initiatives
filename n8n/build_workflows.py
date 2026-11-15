@@ -40,8 +40,12 @@ def pg(name, query, params_expr, pos, cred):
                 {"operation": "executeQuery", "query": query, "options": opts}, pos, CRED[cred])
 
 def tg_send(name, chat, text, pos, extra_fields=None, reply_markup=None):
-    params = {"chatId": chat, "text": text,
-              "additionalFields": {"appendAttribution": False, **(extra_fields or {})}}
+    # Send as HTML with <, > and & escaped, so underscores/asterisks in names, links or errors can never
+    # break a message (n8n's default "Markdown" mode rejects text with a stray "_" or "*").
+    inner = text[3:-2].strip() if text.startswith("={{") and text.endswith("}}") else json.dumps(text)
+    safe = "={{ String((" + inner + ") ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }}"
+    params = {"chatId": chat, "text": safe,
+              "additionalFields": {"appendAttribution": False, "parse_mode": "HTML", **(extra_fields or {})}}
     if reply_markup: params.update(reply_markup)
     return node(name, "n8n-nodes-base.telegram", 1.2, params, pos, CRED["telegram"])
 

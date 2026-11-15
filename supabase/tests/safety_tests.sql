@@ -429,7 +429,7 @@ select t.assert('email redraft still works after the change',
 -- ---- Early warning + weekly briefing ----
 update sci.tasks set created_at = now() - interval '6 hours', attempts = 0, status = 'queued'
  where id = (select id from sci.tasks where type = 'research_prospect' and status = 'queued' limit 1);
-select t.assert('stuck research is flagged in /status', sci.status_summary() like '%waiting 6+ hours without being picked up%Research Prospects%');
+select t.assert('stuck research is flagged in /status, in plain words', sci.status_summary() like '%research task(s) waiting 6+ hours%Research Prospects%' and sci.status_summary() not like '%research_prospect%');
 select t.assert('weekly briefing has pipeline, waiting-on-you, health and spend sections',
   sci.weekly_briefing() like '%PIPELINE%Researched:%WAITING ON YOU%HEALTH%AI spend:%');
 select t.assert('bot: /brief returns the briefing', sci.handle_telegram('brief','111111') like '📊 SCI weekly briefing%');

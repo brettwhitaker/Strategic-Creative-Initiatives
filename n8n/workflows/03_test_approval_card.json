@@ -44,9 +44,10 @@
       ],
       "parameters": {
         "chatId": "8995080526",
-        "text": "={{ '📝 Approval needed (TEST)\\n\\nTo: ' + $json.recipient + '\\nSubject: ' + $json.subject + '\\n\\n' + $json.body }}",
+        "text": "={{ String(('📝 Approval needed (TEST)\\n\\nTo: ' + $json.recipient + '\\nSubject: ' + $json.subject + '\\n\\n' + $json.body) ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }}",
         "additionalFields": {
-          "appendAttribution": false
+          "appendAttribution": false,
+          "parse_mode": "HTML"
         },
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {

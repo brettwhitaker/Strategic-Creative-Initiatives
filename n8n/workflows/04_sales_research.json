@@ -329,9 +329,10 @@
       ],
       "parameters": {
         "chatId": "8995080526",
-        "text": "={{ $json.saved.summary + ($('Check the research').item.json.downgraded ? '\\n⚠️ ' + $('Check the research').item.json.downgraded + \" claim(s) couldn't be matched to a page and were marked 'inferred'.\" : '') }}",
+        "text": "={{ String(($json.saved.summary + ($('Check the research').item.json.downgraded ? '\\n⚠️ ' + $('Check the research').item.json.downgraded + \" claim(s) couldn't be matched to a page and were marked 'inferred'.\" : '')) ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }}",
         "additionalFields": {
-          "appendAttribution": false
+          "appendAttribution": false,
+          "parse_mode": "HTML"
         }
       },
       "credentials": {
@@ -375,9 +376,10 @@
       ],
       "parameters": {
         "chatId": "8995080526",
-        "text": "={{ '⚠️ Research failed for ' + $('Check the research').item.json.ctx.business + '\\n' + $('Check the research').item.json.error + '\\nIt will be retried automatically (up to 3 tries).' }}",
+        "text": "={{ String(('⚠️ Research failed for ' + $('Check the research').item.json.ctx.business + '\\n' + $('Check the research').item.json.error + '\\nIt will be retried automatically (up to 3 tries).') ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }}",
         "additionalFields": {
-          "appendAttribution": false
+          "appendAttribution": false,
+          "parse_mode": "HTML"
         }
       },
       "credentials": {

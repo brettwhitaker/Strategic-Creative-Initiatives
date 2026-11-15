@@ -187,9 +187,10 @@
       ],
       "parameters": {
         "chatId": "={{ $('Read the command').item.json.chatId }}",
-        "text": "={{ $('Ask the database (checks it\\'s you)').item.json.reply }}",
+        "text": "={{ String(($('Ask the database (checks it\\'s you)').item.json.reply) ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }}",
         "additionalFields": {
-          "appendAttribution": false
+          "appendAttribution": false,
+          "parse_mode": "HTML"
         }
       },
       "credentials": {

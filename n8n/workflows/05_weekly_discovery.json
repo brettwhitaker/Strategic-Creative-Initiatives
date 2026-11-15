@@ -355,9 +355,10 @@
       ],
       "parameters": {
         "chatId": "8995080526",
-        "text": "={{ $json.text }}",
+        "text": "={{ String(($json.text) ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }}",
         "additionalFields": {
-          "appendAttribution": false
+          "appendAttribution": false,
+          "parse_mode": "HTML"
         },
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
@@ -401,9 +402,10 @@
       ],
       "parameters": {
         "chatId": "8995080526",
-        "text": "={{ $json.text }}",
+        "text": "={{ String(($json.text) ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }}",
         "additionalFields": {
-          "appendAttribution": false
+          "appendAttribution": false,
+          "parse_mode": "HTML"
         }
       },
       "credentials": {
@@ -447,9 +449,10 @@
       ],
       "parameters": {
         "chatId": "8995080526",
-        "text": "={{ '⚠️ Weekly prospect discovery failed: ' + $('Check the candidates').item.json.error }}",
+        "text": "={{ String(('⚠️ Weekly prospect discovery failed: ' + $('Check the candidates').item.json.error) ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }}",
         "additionalFields": {
-          "appendAttribution": false
+          "appendAttribution": false,
+          "parse_mode": "HTML"
         }
       },
       "credentials": {

@@ -23,9 +23,10 @@
       ],
       "parameters": {
         "chatId": "8995080526",
-        "text": "={{ '⚠️ SCI workflow failed\\n\\nWorkflow: ' + $json.workflow.name + '\\nStep: ' + ($json.execution.lastNodeExecuted || 'unknown') + '\\nError: ' + (($json.execution.error && $json.execution.error.message) || 'unknown').slice(0, 300) + ($json.execution.url ? '\\n\\nDetails: ' + $json.execution.url : '') }}",
+        "text": "={{ String(('⚠️ SCI workflow failed\\n\\nWorkflow: ' + $json.workflow.name + '\\nStep: ' + ($json.execution.lastNodeExecuted || 'unknown') + '\\nError: ' + (($json.execution.error && $json.execution.error.message) || 'unknown').slice(0, 300) + ($json.execution.url ? '\\n\\nDetails: ' + $json.execution.url : '')) ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }}",
         "additionalFields": {
-          "appendAttribution": false
+          "appendAttribution": false,
+          "parse_mode": "HTML"
         }
       },
       "credentials": {
