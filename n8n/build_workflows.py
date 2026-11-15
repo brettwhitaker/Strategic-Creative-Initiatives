@@ -13,7 +13,7 @@ OWNER_CHAT_ID = "8995080526"   # Brett's Telegram ID (not a secret)
 CRED = {
     "approver": {"postgres": {"id": "aI4noCV2CIVApiDB", "name": "SCI DB – Approver"}},
     "sales":    {"postgres": {"id": "N4KikjZT38HnQKQ5", "name": "SCI DB – Sales"}},
-    "social":   {"postgres": {"id": "", "name": "SCI DB – Social"}},
+    "social":   {"postgres": {"id": "jO1FLX5aUgVSjLqt", "name": "SCI DB – Social"}},
     "telegram": {"telegramApi": {"id": "RnNUfVcWtcI7GmD9", "name": "SCI – Telegram Bot"}},
 }
 
