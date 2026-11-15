@@ -82,7 +82,7 @@ $input.all().forEach((item, i) => {
   } else if (msg && typeof msg.text === 'string') {
     const text = msg.text.trim();
     const cmd = text.split(/\s+/)[0].split('@')[0].toLowerCase();
-    if (['/pause', '/resume', '/status', '/help', '/start', '/prospect'].includes(cmd)) {
+    if (['/pause', '/resume', '/status', '/help', '/start', '/prospect', '/brief'].includes(cmd)) {
       kind = cmd.slice(1);
       arg = text.slice(text.split(/\s+/)[0].length).trim().slice(0, 200);
     }
@@ -418,8 +418,8 @@ const request = {
     { type: 'text', text: 'SCI BUSINESS KNOWLEDGE\n\n' + knowledge, cache_control: { type: 'ephemeral' } },
   ],
   tools: [
-    { type: 'web_search_20260209', name: 'web_search', max_uses: 6 },
-    { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 6, max_content_tokens: 8000 },
+    { type: 'web_search_20260209', name: 'web_search', max_uses: ctx.max_searches || 6 },
+    { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: ctx.max_fetches || 6, max_content_tokens: 8000 },
     CANDIDATES_TOOL_JSON,
   ],
   tool_choice: { type: 'auto' },
@@ -461,9 +461,9 @@ MESSAGES_JS = r"""
 const seg = $('Check the candidates').first().json.ctx.segment;
 const rows = $input.all().map(i => i.json).filter(r => r.candidate_id);
 if (!rows.length) return [{ json: { kind: 'header',
-  text: '🧭 Weekly discovery (' + seg.category + ' in ' + seg.area + '): no new candidates this time. Next week tries a different category/area.' } }];
+  text: '🧭 Discovery (' + seg.category + ' in ' + seg.area + '): no new candidates this time. The next run tries different categories.' } }];
 return [{ json: { kind: 'header', text: rows[0].header } },
-        ...rows.map(r => ({ json: { kind: 'card', text: r.card, candidate_id: r.candidate_id } }))];
+        ...rows.map(r => ({ json: { kind: r.auto ? 'header' : 'card', text: r.card, candidate_id: r.candidate_id } }))];
 """.strip()
 
 D = "$('Check the candidates').item.json"
@@ -772,6 +772,21 @@ social = workflow("SCI – Social: Content Planner", [
         ("Record failure", "Tell Brett it failed")))
 social["settings"]["timezone"] = "America/New_York"
 
+# ---------------------------------------------------------------- 9. Monday briefing + stuck-work check (no AI, free)
+briefing = workflow("SCI – Monday Briefing & Health Check", [
+    node("Mondays 8:20 AM ET", "n8n-nodes-base.scheduleTrigger", 1.2,
+         {"rule": {"interval": [{"field": "cronExpression", "expression": "20 8 * * 1"}]}}, [0, -100]),
+    pg("Build briefing", "select sci.weekly_briefing() as text", None, [240, -100], "approver"),
+    tg_send("Send briefing", OWNER_CHAT_ID, "={{ $json.text }}", [480, -100]),
+    node("Daily 12:20 PM & 6:20 PM ET", "n8n-nodes-base.scheduleTrigger", 1.2,
+         {"rule": {"interval": [{"field": "cronExpression", "expression": "20 12,18 * * *"}]}}, [0, 150]),
+    pg("Anything stuck?", "select sci.stuck_warning() as warning", None, [240, 150], "approver"),
+    if_node("Stuck?", "={{ $json.warning }}", "notEmpty", "", [480, 150], typ="string"),
+    tg_send("Alert Brett", OWNER_CHAT_ID, "={{ $json.warning }}", [720, 100]),
+], link(("Mondays 8:20 AM ET", "Build briefing"), ("Build briefing", "Send briefing"),
+        ("Daily 12:20 PM & 6:20 PM ET", "Anything stuck?"), ("Anything stuck?", "Stuck?"), ("Stuck?", "Alert Brett", 0)))
+briefing["settings"]["timezone"] = "America/New_York"
+
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
     for fname, wf in [("01_error_alerts.json", error_alerts), ("02_telegram_bot.json", telegram_bot),
@@ -779,6 +794,7 @@ if __name__ == "__main__":
                       ("04_sales_research.json", research),
                       ("05_weekly_discovery.json", discovery),
                       ("06_outreach_drafts.json", drafts),
-                      ("08_social_content_planner.json", social)]:
+                      ("08_social_content_planner.json", social),
+                      ("09_briefing_and_health.json", briefing)]:
         (OUT / fname).write_text(json.dumps(wf, indent=2, ensure_ascii=False))
         print("wrote", OUT / fname)

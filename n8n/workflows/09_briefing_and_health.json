@@ -1,0 +1,233 @@
+{
+  "name": "SCI – Monday Briefing & Health Check",
+  "nodes": [
+    {
+      "id": "a295accd-558c-5de0-9c64-002dae9b04a6",
+      "name": "Mondays 8:20 AM ET",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        -100
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "20 8 * * 1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "567ec5b7-7c95-5d94-890e-02790f30a16c",
+      "name": "Build briefing",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        240,
+        -100
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select sci.weekly_briefing() as text",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "SCI DB – Approver"
+        }
+      }
+    },
+    {
+      "id": "d8069dad-b28a-5ab4-9a1e-c1644f7221a3",
+      "name": "Send briefing",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        480,
+        -100
+      ],
+      "parameters": {
+        "chatId": "8995080526",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "SCI – Telegram Bot"
+        }
+      }
+    },
+    {
+      "id": "80857a13-b4bb-520b-b595-4fb0de01b6a6",
+      "name": "Daily 12:20 PM & 6:20 PM ET",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        150
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "20 12,18 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "1f11ee94-93c7-512a-95ec-bf3cde2afe38",
+      "name": "Anything stuck?",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        240,
+        150
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select sci.stuck_warning() as warning",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "SCI DB – Approver"
+        }
+      }
+    },
+    {
+      "id": "e1567372-73b1-5301-986a-070a942a78f2",
+      "name": "Stuck?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        150
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "Stuck?",
+              "leftValue": "={{ $json.warning }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "1b557b3a-242c-560c-b473-64cf8af42409",
+      "name": "Alert Brett",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        720,
+        100
+      ],
+      "parameters": {
+        "chatId": "8995080526",
+        "text": "={{ $json.warning }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "SCI – Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Mondays 8:20 AM ET": {
+      "main": [
+        [
+          {
+            "node": "Build briefing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build briefing": {
+      "main": [
+        [
+          {
+            "node": "Send briefing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily 12:20 PM & 6:20 PM ET": {
+      "main": [
+        [
+          {
+            "node": "Anything stuck?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anything stuck?": {
+      "main": [
+        [
+          {
+            "node": "Stuck?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stuck?": {
+      "main": [
+        [
+          {
+            "node": "Alert Brett",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": true,
+    "timezone": "America/New_York"
+  },
+  "active": false,
+  "pinData": {},
+  "tags": []
+}

@@ -256,8 +256,12 @@ select t.assert('discovery keeps only NEW, contactable candidates (2 of 4)', (se
 select t.assert('candidate card shows signal and source', (select card like '%Hiring signal (verified): Hiring a marketing coordinator%Source: https://jobs.test/1%' from t_cards where card like '%Ancient%'));
 select t.expect_error('discovery cannot save an unsourced "verified" signal',
   $$insert into sci.prospect_candidates(name, signal_type, signal, signal_status) values ('X','hiring','y','verified')$$);
-select t.assert('bot: Research button turns a candidate into a queued prospect',
-  sci.handle_telegram('candidate','111111',(select candidate_id from t_cards where card like '%Ancient%'),'research') like '✅ Added Ancient City Accounting%');
+select t.assert('verified signal with a website was researched automatically (no tap needed)',
+  (select status = 'accepted' from sci.prospect_candidates where name = 'Ancient City Accounting')
+  and (select auto from t_cards where card like '%Ancient%')
+  and (select card like '%Research started automatically%' from t_cards where card like '%Ancient%'));
+select t.assert('inferred signal still waits for Brett to tap', (select status = 'pending' from sci.prospect_candidates where name = 'Palm Valley PT'));
+select t.assert('header counts the automatic research', (select bool_and(header like '%2 new candidate(s), 1 researched automatically%') from t_cards));
 select t.assert('…and saved its website', exists (select 1 from sci.organizations where domain = 'ancientcityacct.test'));
 select t.assert('bot: Skip button skips; pressing again is harmless',
   sci.handle_telegram('candidate','111111',(select candidate_id from t_cards where card like '%Palm%'),'skip') like '⏭%');
@@ -275,8 +279,8 @@ do $x$ begin for i in 1..6 loop perform sci.sales_start_discovery();
   insert into t_rot select i, region from sci.discovery_segments order by last_run_at desc nulls last limit 1; end loop; end $x$;
 select t.assert('rotation is home, Florida metro, home, Indianapolis, home, Florida metro',
   (select string_agg(region, ',' order by n) = 'nefl,florida,nefl,indianapolis,nefl,florida' from t_rot));
-select t.assert('discovery v2 instructions are active (hiring first)',
-  (select version = 2 and system_text like '%hiring (strongest%' from sci.prompts where name = 'prospect_discovery' and is_active));
+select t.assert('discovery v3 instructions are active (hiring first, always find the website)',
+  (select version = 3 and system_text like '%hiring:%' and system_text like '%ALWAYS FIND THE OFFICIAL WEBSITE%' from sci.prompts where name = 'prospect_discovery' and is_active));
 select t.assert('geography scoring credits Indianapolis', (select content like '%Indianapolis area = 7%' from sci.business_knowledge where key = 'fit_rubric' and is_active));
 
 -- ---- Outreach drafts ----
@@ -421,6 +425,18 @@ select t.assert('new version saved with its own key and labeled', (select bool_a
 select t.assert('old version is marked rejected', exists (select 1 from sci.content_items where draft like 'Meet the beans%' and status = 'rejected'));
 select t.assert('email redraft still works after the change',
   (select sci.request_redraft(gen_random_uuid(), '111111') = 'Draft not found.'));
+
+-- ---- Early warning + weekly briefing ----
+update sci.tasks set created_at = now() - interval '6 hours', attempts = 0, status = 'queued'
+ where id = (select id from sci.tasks where type = 'research_prospect' and status = 'queued' limit 1);
+select t.assert('stuck research is flagged in /status', sci.status_summary() like '%waiting 6+ hours without being picked up%Research Prospects%');
+select t.assert('weekly briefing has pipeline, waiting-on-you, health and spend sections',
+  sci.weekly_briefing() like '%PIPELINE%Researched:%WAITING ON YOU%HEALTH%AI spend:%');
+select t.assert('bot: /brief returns the briefing', sci.handle_telegram('brief','111111') like '📊 SCI weekly briefing%');
+select t.assert('bot: strangers get nothing from /brief', sci.handle_telegram('brief','999999') is null);
+update t_ctx set ctx = sci.sales_start_discovery('exec-d3');
+select t.assert('discovery v3 searches two categories across the whole region',
+  (select ctx->'segment'->>'category' like '% and %' and (ctx->>'max_searches')::int = 10 from t_ctx));
 
 rollback;
 \echo

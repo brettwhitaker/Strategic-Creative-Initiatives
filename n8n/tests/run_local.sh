@@ -59,8 +59,10 @@ check "2 new candidates saved; already-known business skipped" "select count(*)=
 check "real signal kept as verified" "select signal_status='verified' from sci.prospect_candidates where name='Ancient City Accounting'"
 check "unconfirmed signal downgraded to inferred" "select signal_status='inferred' and source_url is null from sci.prospect_candidates where name='Made Up Signal LLC'"
 CAND=$("${PSQL[@]}" -c "select id from sci.prospect_candidates where name='Ancient City Accounting'")
-grep -q "dc:$CAND:research" "$WORK/disc.out" && echo "PASS candidate card carries Research button" || { echo "FAIL card buttons"; exit 1; }
-grep -q "Weekly discovery:" "$WORK/disc.out" && echo "PASS header message produced" || { echo "FAIL header"; exit 1; }
+grep -q "Research started automatically" "$WORK/disc.out" && echo "PASS verified candidate was researched automatically" || { echo "FAIL auto research"; exit 1; }
+CAND2=$("${PSQL[@]}" -c "select id from sci.prospect_candidates where name='Made Up Signal LLC'")
+grep -q "dc:$CAND2:research" "$WORK/disc.out" && echo "PASS unverified candidate card carries Research button" || { echo "FAIL card buttons"; exit 1; }
+grep -q "Discovery:" "$WORK/disc.out" && echo "PASS header message produced" || { echo "FAIL header"; exit 1; }
 
 echo "== 5. Tapping Research on a candidate (through the bot workflow)"
 python3 - "$WORK/02_telegram_bot.json" "$CAND" <<'PY'
@@ -75,7 +77,7 @@ json.dump(wf, open(p.replace(".json", "_2.json"), "w"))
 PY
 "$N8N" import:workflow --input="$WORK/02_telegram_bot_2.json" >/dev/null 2>&1
 "$N8N" execute --id=testBot2 --rawOutput > "$WORK/bot2.out" 2>&1 || { cat "$WORK/bot2.out"; exit 1; }
-check "Research button queued the candidate for research" "select exists(select 1 from sci.tasks t join sci.prospects p on p.id=t.related_id join sci.organizations o on o.id=p.organization_id where o.name='Ancient City Accounting' and t.status='queued')"
+check "candidate is queued for research" "select exists(select 1 from sci.tasks t join sci.prospects p on p.id=t.related_id join sci.organizations o on o.id=p.organization_id where o.name='Ancient City Accounting' and t.status='queued')"
 
 echo "== 6. Outreach drafts workflow"
 "$N8N" import:workflow --input="$WORK/06_outreach_drafts.json" >/dev/null 2>&1
@@ -104,4 +106,9 @@ grep -q "rd:$SA" "$WORK/social.out" && echo "PASS post cards carry Approve/Rejec
 grep -q "mentions a price" "$WORK/social.out" && echo "PASS a post with a price is flagged for review" || { echo "FAIL price flag"; exit 1; }
 "$N8N" execute --id=testSocial --rawOutput > "$WORK/social2.out" 2>&1 || true
 check "running again before next week drafts nothing new" "select count(*)=3 from sci.outbound_actions where created_by='social'"
+
+echo "== 9. Briefing & health workflow (run its queries directly)"
+B=$("${PSQL[@]}" -c "set role sci_approver; select sci.weekly_briefing()")
+echo "$B" | grep -q "PIPELINE" && echo "PASS Approver login can build the briefing" || { echo "FAIL briefing"; exit 1; }
+"$N8N" import:workflow --input="$HERE/../workflows/09_briefing_and_health.json" >/dev/null 2>&1 && echo "PASS briefing workflow imports into n8n" || { echo "FAIL import 09"; exit 1; }
 echo "ALL N8N WORKFLOW TESTS PASSED"
