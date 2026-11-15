@@ -83,12 +83,14 @@ $input.all().forEach((item, i) => {
     if (m) { kind = 'candidate'; target = m[1]; decision = m[2]; }
     m = /^rd:([0-9a-f-]{36})$/.exec(cb.data || '');
     if (m) { kind = 'redraft'; target = m[1]; }
+    m = /^da:([0-9a-f-]{36})$/.exec(cb.data || '');
+    if (m) { kind = 'draft_anyway'; target = m[1]; }
     m = /^hw:([0-9a-f-]{36}):(replied|skip)$/.exec(cb.data || '');
     if (m) { kind = 'helpwanted'; target = m[1]; decision = m[2]; }
   } else if (msg && typeof msg.text === 'string') {
     const text = msg.text.trim();
     const cmd = text.split(/\s+/)[0].split('@')[0].toLowerCase();
-    if (['/pause', '/resume', '/status', '/help', '/start', '/prospect', '/brief', '/post', '/sent'].includes(cmd)) {
+    if (['/pause', '/resume', '/status', '/help', '/start', '/prospect', '/brief', '/post', '/sent', '/draft'].includes(cmd)) {
       kind = cmd.slice(1);
       arg = text.slice(text.split(/\s+/)[0].length).trim().slice(0, cmd === '/post' ? 2000 : 200);
     }
@@ -365,9 +367,17 @@ research = workflow("SCI – Sales: Research Prospects", [
     pg("Save + score", "select sci.sales_save_research($1::uuid, $2::uuid, $3::jsonb, $4::jsonb) as saved",
        "={{ [ $json.ctx.run_id, $json.ctx.task_id, JSON.stringify($json.result), JSON.stringify($json.usage) ] }}",
        [2880, 0], "sales"),
+    if_node("Qualified?", "={{ $json.saved.stage }}", "equals", "qualified", [3120, 0], typ="string"),
     tg_send("Send summary to Brett", OWNER_CHAT_ID,
             "={{ $json.saved.summary + (" + V + ".downgraded ? '\\n⚠️ ' + " + V + ".downgraded + \" claim(s) couldn't be matched to a page and were marked 'inferred'.\" : '') }}",
-            [3120, 0]),
+            [3360, -100]),
+    tg_send("Send summary with Draft button", OWNER_CHAT_ID,
+            "={{ $json.saved.summary + (" + V + ".downgraded ? '\\n⚠️ ' + " + V + ".downgraded + \" claim(s) couldn't be matched to a page and were marked 'inferred'.\" : '') }}",
+            [3360, 100], reply_markup={
+                "replyMarkup": "inlineKeyboard",
+                "inlineKeyboard": {"rows": [{"row": {"buttons": [
+                    {"text": "✍️ Draft an email anyway", "additionalFields": {"callback_data": "={{ 'da:' + $json.saved.prospect_id }}"}},
+                ]}}]}}),
     pg("Record failure", "select sci.sales_fail_research($1::uuid, $2::uuid, $3, $4::jsonb)",
        "={{ [ $json.ctx.run_id, $json.ctx.task_id, $json.error, JSON.stringify($json.usage) ] }}", [2880, 200], "sales"),
     tg_send("Tell Brett it failed", OWNER_CHAT_ID,
@@ -388,7 +398,9 @@ research = workflow("SCI – Sales: Research Prospects", [
         ("Check the research", "Got a result?"),
         ("Got a result?", "Save + score", 0),
         ("Got a result?", "Record failure", 1),
-        ("Save + score", "Send summary to Brett"),
+        ("Save + score", "Qualified?"),
+        ("Qualified?", "Send summary to Brett", 0),
+        ("Qualified?", "Send summary with Draft button", 1),
         ("Record failure", "Tell Brett it failed")))
 research["settings"]["timezone"] = "America/New_York"
 

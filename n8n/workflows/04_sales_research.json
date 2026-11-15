@@ -319,13 +319,46 @@
       }
     },
     {
+      "id": "a87df47a-68da-535e-bb04-d56121fc5b1a",
+      "name": "Qualified?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3120,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "Qualified?",
+              "leftValue": "={{ $json.saved.stage }}",
+              "rightValue": "qualified",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
       "id": "5a4c0036-d704-523f-9998-2061fc3f89fb",
       "name": "Send summary to Brett",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        3120,
-        0
+        3360,
+        -100
       ],
       "parameters": {
         "chatId": "8995080526",
@@ -333,6 +366,47 @@
         "additionalFields": {
           "appendAttribution": false,
           "parse_mode": "HTML"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "RnNUfVcWtcI7GmD9",
+          "name": "SCI – Telegram Bot"
+        }
+      }
+    },
+    {
+      "id": "c1f0ca9b-1927-5d11-a984-5ff8202a17e8",
+      "name": "Send summary with Draft button",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3360,
+        100
+      ],
+      "parameters": {
+        "chatId": "8995080526",
+        "text": "={{ String(($json.saved.summary + ($('Check the research').item.json.downgraded ? '\\n⚠️ ' + $('Check the research').item.json.downgraded + \" claim(s) couldn't be matched to a page and were marked 'inferred'.\" : '')) ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        },
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "✍️ Draft an email anyway",
+                    "additionalFields": {
+                      "callback_data": "={{ 'da:' + $json.saved.prospect_id }}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
         }
       },
       "credentials": {
@@ -552,7 +626,25 @@
       "main": [
         [
           {
+            "node": "Qualified?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qualified?": {
+      "main": [
+        [
+          {
             "node": "Send summary to Brett",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send summary with Draft button",
             "type": "main",
             "index": 0
           }

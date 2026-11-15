@@ -548,6 +548,19 @@ select t.assert('…and they are suppressed', sci.is_suppressed('dana@riverbendp
 select t.assert('self-test email can be queued by the owner', sci.queue_self_test_email() like 'Test email to %queued%');
 update sci.system_controls set sending_enabled = false where id;
 
+-- ---- Draft an email anyway ----
+insert into sci.organizations(id, name, source) values ('00000000-0000-0000-0000-0000000000a9', 'Glacierish HVAC Co', 'test');
+insert into sci.prospects(id, organization_id, stage, fit_score) values ('00000000-0000-0000-0000-0000000000d9', '00000000-0000-0000-0000-0000000000a9', 'researched', 64);
+select t.assert('button: "Draft anyway" on a your-call business queues a draft',
+  sci.handle_telegram('draft_anyway','111111','00000000-0000-0000-0000-0000000000d9') like '✍️ Got it. An outreach email for Glacierish%');
+select t.assert('…the business is now qualified with a note, and the task is queued',
+  (select stage = 'qualified' and fit_rationale like '%Owner chose to draft anyway (was researched)%' from sci.prospects where id = '00000000-0000-0000-0000-0000000000d9')
+  and exists (select 1 from sci.tasks where dedupe_key = 'draft_outreach:00000000-0000-0000-0000-0000000000d9' and status = 'queued'));
+select t.assert('pressing it twice is harmless', sci.handle_telegram('draft','111111',null,null,'Glacierish') like 'ℹ️ A draft for Glacierish%already in the queue%');
+select t.assert('/draft refuses do-not-contact businesses',
+  sci.handle_telegram('draft','111111',null,null,'Coquina') like '⛔%' or sci.handle_telegram('draft','111111',null,null,'Coquina') like 'ℹ️%');
+select t.assert('strangers cannot request drafts', sci.handle_telegram('draft','999999',null,null,'Glacierish') is null);
+
 rollback;
 \echo
 \echo ALL SAFETY TESTS PASSED
