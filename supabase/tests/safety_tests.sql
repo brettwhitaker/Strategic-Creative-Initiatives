@@ -561,6 +561,20 @@ select t.assert('/draft refuses do-not-contact businesses',
   sci.handle_telegram('draft','111111',null,null,'Coquina') like '⛔%' or sci.handle_telegram('draft','111111',null,null,'Coquina') like 'ℹ️%');
 select t.assert('strangers cannot request drafts', sci.handle_telegram('draft','999999',null,null,'Glacierish') is null);
 
+-- ---- Approval reply says what happens next ----
+insert into sci.outbound_actions(id, created_by, channel, prospect_id, recipient, body, idempotency_key, status, is_test)
+values ('00000000-0000-0000-0000-00000000e0a1','sales','email','00000000-0000-0000-0000-0000000000d9',null,'Hi there, a draft with no email on file for testing purposes.','outreach:test-noemail','pending_approval', false);
+insert into sci.approvals(id, subject_table, subject_id, summary) values ('00000000-0000-0000-0000-00000000f0a1','outbound_actions','00000000-0000-0000-0000-00000000e0a1','x');
+select t.assert('approving a draft with no email tells Brett to use the contact form, then /sent',
+  sci.handle_telegram('decision','111111','00000000-0000-0000-0000-00000000f0a1','approved') like '✅ Approved. There''s no email address on file%/sent Glacierish%');
+insert into sci.outbound_actions(id, created_by, channel, prospect_id, recipient, body, idempotency_key, status, is_test)
+values ('00000000-0000-0000-0000-00000000e0a2','sales','email','00000000-0000-0000-0000-0000000000d9','owner@glacierish.test','Hi there, a draft with an email for testing purposes.','outreach:test-email','pending_approval', false);
+insert into sci.approvals(id, subject_table, subject_id, summary) values ('00000000-0000-0000-0000-00000000f0a2','outbound_actions','00000000-0000-0000-0000-00000000e0a2','x');
+update sci.system_controls set sending_enabled = true where id;
+select t.assert('with sending ON, the reply says it will send in business hours',
+  sci.handle_telegram('decision','111111','00000000-0000-0000-0000-00000000f0a2','approved') like '✅ Approved. It sends from your Gmail%business hours%');
+update sci.system_controls set sending_enabled = false where id;
+
 rollback;
 \echo
 \echo ALL SAFETY TESTS PASSED

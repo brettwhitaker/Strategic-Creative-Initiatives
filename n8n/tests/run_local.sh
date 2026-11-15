@@ -38,7 +38,7 @@ check "stranger's /pause was ignored"                  "select not global_pause 
 grep -q "SCI status" "$WORK/bot.out" && echo "PASS /status reply was produced" || { echo "FAIL /status"; cat "$WORK/bot.out"; exit 1; }
 check "owner's /prospect added a business; stranger's did not" "select exists(select 1 from sci.organizations where name='Bartram Trail Dental') and not exists(select 1 from sci.organizations where name='Sneaky Biz')"
 grep -q "couldn't match that reply to a draft" "$WORK/bot.out" && echo "PASS reply-with-notes is recognized (unknown ref answered politely)" || { echo "FAIL reply notes"; exit 1; }
-grep -q "Approved. (Sending is OFF" "$WORK/bot.out" && echo "PASS approval card text gets updated" || { echo "FAIL card update"; cat "$WORK/bot.out"; exit 1; }
+grep -q "Approved. Sending is OFF: send it yourself" "$WORK/bot.out" && echo "PASS approval card text gets updated" || { echo "FAIL card update"; cat "$WORK/bot.out"; exit 1; }
 
 echo "== 3. Sales research workflow (Claude replaced by a scripted stand-in: pause, then result)"
 "$N8N" import:workflow --input="$WORK/04_sales_research.json" >/dev/null 2>&1
