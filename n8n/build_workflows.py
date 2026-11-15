@@ -15,7 +15,7 @@ CRED = {
     "sales":    {"postgres": {"id": "N4KikjZT38HnQKQ5", "name": "SCI DB – Sales"}},
     "social":   {"postgres": {"id": "jO1FLX5aUgVSjLqt", "name": "SCI DB – Social"}},
     "sender":   {"postgres": {"id": "7rbc0iyfEvYRW4xN", "name": "SCI DB – Sender"}},
-    "gmail":    {"gmailOAuth2": {"id": "", "name": "SCI – Gmail (Brett)"}},
+    "gmail":    {"gmailOAuth2": {"id": "DcVmmEyTXr2AeWm4", "name": "SCI – Gmail (Brett)"}},
     "telegram": {"telegramApi": {"id": "RnNUfVcWtcI7GmD9", "name": "SCI – Telegram Bot"}},
 }
 
