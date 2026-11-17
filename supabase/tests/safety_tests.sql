@@ -587,6 +587,16 @@ select t.assert('budget stop is reported as a safety pause, not a fault (during 
 select t.assert('sales daily budget is $3 and the $25 total cap is unchanged',
   (select daily_usd = 3.00 from sci.budgets where agent = 'sales') and (select monthly_total_cap_usd = 25 from sci.system_controls));
 
+-- ---- 80% monthly heads-up ----
+update sci.tasks set status = 'cancelled' where status = 'queued';
+update sci.system_controls set budget_alert_month = null, monthly_total_cap_usd = 25 where id;
+select sci.record_llm_usage(null, 'social', 'claude-opus-5-5', 5000000, 0);   -- +$20 this month
+select t.assert('at 80% of the monthly cap, one heads-up is sent', sci.stuck_warning() like '💰 Heads-up: AI spending this month%of your $25 cap%');
+select t.assert('…and only once per month', sci.stuck_warning() is null);
+update sci.system_controls set budget_alert_month = null where id;
+select t.assert('/status and the briefing still work when the heads-up is due (read-only)',
+  sci.status_summary() like 'SCI status%' and sci.weekly_briefing() like '📊%' and sci.handle_telegram('brief','111111') like '📊%');
+
 rollback;
 \echo
 \echo ALL SAFETY TESTS PASSED
