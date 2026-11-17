@@ -575,6 +575,18 @@ select t.assert('with sending ON, the reply says it will send in business hours'
   sci.handle_telegram('decision','111111','00000000-0000-0000-0000-00000000f0a2','approved') like '✅ Approved. It sends from your Gmail%business hours%');
 update sci.system_controls set sending_enabled = false where id;
 
+-- ---- Budget-aware stuck warning ----
+insert into sci.tasks(type, owner_agent, related_table, related_id, dedupe_key, created_at)
+values ('research_prospect','sales','prospects','00000000-0000-0000-0000-0000000000d9','research:budgettest', now() - interval '9 hours');
+update sci.agent_runs set started_at = now() - interval '10 hours' where workflow = 'research_prospect';
+select sci.record_llm_usage(null, 'sales', 'claude-opus-5-5', 800000, 20000);   -- ~$3.60 today
+select t.assert('budget stop is reported as a safety pause, not a fault (during working hours)',
+  case when extract(hour from now() at time zone 'America/New_York') between 11 and 20
+       then sci.stuck_warning() like '⏸ %reached its AI budget%resumes tomorrow morning%'
+       else sci.stuck_warning() is null end);
+select t.assert('sales daily budget is $3 and the $25 total cap is unchanged',
+  (select daily_usd = 3.00 from sci.budgets where agent = 'sales') and (select monthly_total_cap_usd = 25 from sci.system_controls));
+
 rollback;
 \echo
 \echo ALL SAFETY TESTS PASSED
